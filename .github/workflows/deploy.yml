@@ -39,7 +39,7 @@ jobs:
         run: |
           mkdir -p _site/data
           cp index.html .nojekyll _site/
-          cp -r css js sample fonts vendor _site/
+          cp -r css js sample vendor _site/
           cp _site_data/french.json _site_data/french-daily.json _site/data/
 
       - uses: actions/configure-pages@v5

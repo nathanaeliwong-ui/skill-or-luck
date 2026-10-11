@@ -13,7 +13,7 @@ Visitors enter their trades (or import a broker export) and the page runs the te
 - **Crash tests**: today's mix in the dot-com bust, 2008, COVID and 2022.
 - **Charts** of your buys and sells on real price history (TradingView Lightweight Charts).
 
-Everything runs in the visitor's browser. Trades are never uploaded, and there's no server or database to pay for. The page loads no third-party scripts or fonts; the only outside request is the optional Alpha Vantage lookup, and it sends ticker symbols only.
+Everything runs in the visitor's browser. Trades are never uploaded, and there's no server or database to pay for. The page uses system fonts and loads no third-party scripts; the only outside request is the optional Alpha Vantage lookup, and it sends ticker symbols only.
 
 ## Data, all free
 
@@ -45,7 +45,6 @@ node tests/engine.test.mjs             # engine checks (needs data/french.json)
 ```
 index.html                     the page
 css/style.css                  styles (light and dark)
-css/fonts.css, fonts/          self-hosted fonts (SIL OFL), so the page never calls Google
 vendor/lightweight-charts.js   TradingView charts v5.2.1 (Apache 2.0), self-hosted
 js/engine.js                   all statistics, no DOM code, unit-tested
 js/app.js                      page logic, charts, import/export

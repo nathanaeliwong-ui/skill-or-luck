@@ -472,14 +472,15 @@ function renderVerdict(L, P) {
       explain = `Your picks beat their own industry by a median ${med} per trade, but ${chance(L.pValue)} of no-skill investors would do at least as well. That's what luck looks like.`;
     }
   }
+  const notes = [];
   if (L.enough) {
     if (P && P.youIrr > P.mktIrr && head !== "Evidence of skill") {
-      explain += ` Your overall return did beat the whole market, but that can come from owning industries that did well, which this test doesn't count as stock-picking skill.`;
+      notes.push("Your overall return did beat the whole market, but that can come from owning industries that did well, which this test doesn't count as stock-picking skill.");
     }
-    explain += ` Industry returns include dividends and your trade returns don't, so this comparison leans slightly against you.`;
+    notes.push("Industry returns include dividends and your trade returns don't, so this comparison leans slightly against you.");
   }
   box.style.setProperty("--tone", color);
-  box.innerHTML = `<p class="label">Verdict on ${L.n} trade${L.n === 1 ? "" : "s"}</p><p class="headline">${esc(head)}</p><p class="explain">${explain}</p>`;
+  box.innerHTML = `<p class="label">Verdict on ${L.n} trade${L.n === 1 ? "" : "s"}</p><p class="headline">${esc(head)}</p><p class="explain">${explain}</p>${notes.map((n) => `<p class="fine">${n}</p>`).join("")}`;
 }
 
 function renderStats(P, L) {
@@ -691,7 +692,7 @@ function baseChart(container, logScale = false) {
   const chart = LWC.createChart(container, {
     autoSize: true,
     localization: { locale },
-    layout: { background: { color: "transparent" }, textColor: cssVar("--muted"), fontFamily: "IBM Plex Sans, system-ui, sans-serif", attributionLogo: true },
+    layout: { background: { color: "transparent" }, textColor: cssVar("--muted"), fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif", attributionLogo: true },
     grid: { vertLines: { color: cssVar("--rule") }, horzLines: { color: cssVar("--rule") } },
     rightPriceScale: { borderColor: cssVar("--rule"), mode: logScale ? LWC.PriceScaleMode.Logarithmic : LWC.PriceScaleMode.Normal },
     timeScale: { borderColor: cssVar("--rule"), minBarSpacing: 0.05 },
