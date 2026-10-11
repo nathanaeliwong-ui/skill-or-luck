@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skill or Luck</title>
+  <meta name="description" content="A free statistics check for your own trades: did you beat the market through skill, or could it be luck? Runs entirely in your browser.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%231f6f4a'/%3E%3Cpath d='M16 2a14 14 0 0 1 0 28z' fill='%23c99a2e'/%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/fraunces-0.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/fonts.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="vendor/lightweight-charts.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap">
+      <div class="brand">
+        <svg class="coin" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" class="coin-a"/><path d="M16 2a14 14 0 0 1 0 28z" class="coin-b"/></svg>
+        <span class="wordmark">Skill <em>or</em> Luck</span>
+      </div>
+      <h1>Did you beat the market, or did the market just go up?</h1>
+      <p class="lede">Enter your trades and this page runs the statistical tests a fund analyst would: it compares every trade with its own industry over the exact same dates, checks whether your results could be chance, measures what your portfolio is really made of, and stress-tests it against past crashes.</p>
+      <p class="privacy"><span class="dot"></span>Runs entirely in your browser. Your trades are never uploaded.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Step 1 -->
+    <section class="step" id="step-trades">
+      <div class="step-head">
+        <span class="step-num">1</span>
+        <div>
+          <h2>Your trades</h2>
+          <p class="hint">One row per purchase. Fill in a sell date and price for anything you've sold. For split stocks, use split-adjusted prices.</p>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn" id="btn-sample" type="button">Try sample trades</button>
+        <label class="btn" for="file-broker">Import broker CSV</label>
+        <input type="file" id="file-broker" accept=".csv,.txt,text/csv" hidden>
+        <button class="btn ghost" id="btn-template" type="button">Download template</button>
+        <button class="btn ghost" id="btn-export" type="button">Save my entries</button>
+        <button class="btn ghost danger" id="btn-clear" type="button">Clear</button>
+      </div>
+      <p class="hint small">Import works with trade-history exports from most brokers (Robinhood, Fidelity, Schwab, Interactive Brokers and others), matching sells to buys first-in, first-out.</p>
+      <div id="import-msg" class="notice" hidden></div>
+
+      <div class="table-scroll">
+        <table class="trades" id="trades-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Industry proxy</th>
+              <th>Buy date</th>
+              <th class="num">Buy price</th>
+              <th class="num">Shares</th>
+              <th>Sell date</th>
+              <th class="num">Sell price</th>
+              <th class="num">Price today</th>
+              <th><span class="sr">Remove</span></th>
+            </tr>
+          </thead>
+          <tbody id="trades-body"></tbody>
+        </table>
+      </div>
+      <button class="btn add" id="btn-add" type="button">+ Add trade</button>
+
+      <div class="job">
+        <label for="job-select">Which industry pays your salary?</label>
+        <select id="job-select"></select>
+        <p class="hint small">Optional. Used to check whether your portfolio falls at the same time your income is most at risk.</p>
+      </div>
+    </section>
+
+    <!-- Step 2 -->
+    <section class="step" id="step-prices">
+      <div class="step-head">
+        <span class="step-num">2</span>
+        <div>
+          <h2>Exact prices <span class="optional">optional</span></h2>
+          <p class="hint">Without them, each stock is represented by its industry (free data, built in). Add real price histories to get exact charts and more precise exposure numbers.</p>
+        </div>
+      </div>
+
+      <div class="price-options">
+        <div class="price-option">
+          <h3>Attach price files</h3>
+          <p class="hint small">Download a stock's history as CSV from Nasdaq.com ("Historical Quotes") or Stooq.com, then attach it below. Free, no sign-up.</p>
+        </div>
+        <div class="price-option">
+          <h3>Or use a free Alpha Vantage key</h3>
+          <p class="hint small">Get a free key at <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener">alphavantage.co</a> (25 requests a day). Prices are fetched straight from your browser; only ticker symbols are sent to Alpha Vantage.</p>
+          <div class="av-row">
+            <input type="password" id="av-key" placeholder="Your API key" autocomplete="off" spellcheck="false">
+            <button class="btn" id="btn-av" type="button">Fetch prices</button>
+          </div>
+          <label class="check"><input type="checkbox" id="av-remember"> Remember key in this browser</label>
+          <p id="av-status" class="hint small" aria-live="polite"></p>
+        </div>
+      </div>
+
+      <ul class="price-list" id="price-list"></ul>
+    </section>
+
+    <div class="run-bar">
+      <button class="btn primary" id="btn-run" type="button">Run the analysis</button>
+      <p id="run-msg" class="hint small" aria-live="polite"></p>
+    </div>
+
+    <!-- Results -->
+    <section id="results" hidden>
+      <div class="verdict" id="verdict"></div>
+      <div class="stats" id="stat-cards"></div>
+      <div id="problems" class="notice warn" hidden></div>
+
+      <article class="card" id="card-luck">
+        <h2>The luck test</h2>
+        <div class="card-body" id="luck-body"></div>
+      </article>
+
+      <article class="card" id="card-holding">
+        <h2>Your selling habits</h2>
+        <div class="card-body" id="holding-body"></div>
+      </article>
+
+      <article class="card" id="card-mix">
+        <h2>What your portfolio is really made of</h2>
+        <div class="card-body" id="mix-body"></div>
+      </article>
+
+      <article class="card" id="card-job">
+        <h2>Your job and your portfolio</h2>
+        <div class="card-body" id="job-body"></div>
+      </article>
+
+      <article class="card" id="card-stress">
+        <h2>Crash tests</h2>
+        <div class="card-body" id="stress-body"></div>
+      </article>
+
+      <article class="card" id="card-growth">
+        <h2>Your mix vs the market, last 20 years</h2>
+        <div class="card-body" id="growth-body"></div>
+      </article>
+
+      <article class="card" id="card-charts" hidden>
+        <h2>Your trades on the real price charts</h2>
+        <div class="card-body" id="charts-body"></div>
+      </article>
+
+      <details class="method">
+        <summary>How the numbers are calculated</summary>
+        <div class="method-body">
+          <p><strong>Industry proxies.</strong> Each stock is matched to one of Kenneth French's 12 industry portfolios, which have free monthly returns (including dividends) back to 1926. Index funds use the whole US market. Bonds, gold, crypto and cash have no proxy and are left out of the exposure tests.</p>
+          <p><strong>The luck test.</strong> For every trade with a known end price, your return is compared with its industry's return over the exact same dates. If you had no stock-picking skill, beating or trailing the industry by a given amount would be equally likely. The test flips each trade's result to a win or a loss at random 10,000 times and counts how often a no-skill investor would match your average. Each trade counts equally, whatever its size.</p>
+          <p><strong>Trades needed.</strong> The number of trades, at your current average edge and spread, that a one-sided test at the 5% level would need before ruling out luck.</p>
+          <p><strong>Your return.</strong> A money-weighted annual return (XIRR) from your actual purchase and sale dates, compared with putting exactly the same money into the whole market on the same dates. Your figures use the price change only, so dividends you received are not counted; the industry and market figures include dividends, which slightly favours them.</p>
+          <p><strong>Selling habits.</strong> Compares how long you held sold winners with sold losers, using a permutation test. Holding losers much longer is the disposition effect, one of the best-documented costly habits of individual investors.</p>
+          <p><strong>Exposure.</strong> Your current mix's monthly returns over the last ten years are regressed on the Fama-French market, size and value factors plus momentum. With industry proxies, this describes your mix's tilts, not your stock-picking.</p>
+          <p><strong>Your job.</strong> Correlation between your mix and your employer's industry over 20 years, compared with what a plain index fund would show, plus how your mix did in your industry's worst 10% of months.</p>
+          <p>This page reports statistics about your own records. It is not investment advice.</p>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p>Market data: <a href="https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html" target="_blank" rel="noopener">Kenneth R. French Data Library</a><span id="data-date"></span>. Charts: <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>.</p>
+    <p>For education only. Not investment advice. Past performance, real or simulated, does not predict future results.</p>
+  </footer>
+
+  <template id="row-template">
+    <tr>
+      <td><input data-f="ticker" class="ticker" placeholder="AAPL" spellcheck="false" autocapitalize="characters" aria-label="Ticker"></td>
+      <td><select data-f="industry" aria-label="Industry proxy"></select></td>
+      <td><input data-f="buyDate" type="date" aria-label="Buy date"></td>
+      <td><input data-f="buyPrice" class="num" inputmode="decimal" placeholder="0.00" aria-label="Buy price"></td>
+      <td><input data-f="qty" class="num" inputmode="decimal" placeholder="0" aria-label="Shares"></td>
+      <td><input data-f="sellDate" type="date" aria-label="Sell date"></td>
+      <td><input data-f="sellPrice" class="num" inputmode="decimal" placeholder="—" aria-label="Sell price"></td>
+      <td><input data-f="currentPrice" class="num" inputmode="decimal" placeholder="—" aria-label="Price today"></td>
+      <td><button type="button" class="icon-btn remove" aria-label="Remove trade">×</button></td>
+    </tr>
+  </template>
+</body>
+</html>

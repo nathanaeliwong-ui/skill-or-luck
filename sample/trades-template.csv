@@ -1,0 +1,3 @@
+ticker,buy_date,buy_price,shares,sell_date,sell_price,current_price,industry
+AAPL,2021-03-15,121.03,10,2023-08-01,195.61,,
+VOO,2022-01-03,439.00,5,,,,

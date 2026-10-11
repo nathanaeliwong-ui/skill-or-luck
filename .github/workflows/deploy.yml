@@ -1,0 +1,59 @@
+# Builds and publishes the site to GitHub Pages.
+# On every run, GitHub's servers download fresh Fama-French data, so the
+# published site always has the latest month without anything being committed.
+#
+# One-time setup: repo Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 3 * *"   # monthly, after French usually posts new data
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download Fama-French data
+        run: python3 scripts/fetch_french_data.py _site_data/french.json
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/data
+          cp index.html .nojekyll _site/
+          cp -r css js sample fonts vendor _site/
+          cp _site_data/french.json _site_data/french-daily.json _site/data/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
