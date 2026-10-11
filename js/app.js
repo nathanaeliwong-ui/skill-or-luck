@@ -395,6 +395,7 @@ async function run() {
     renderStress(stress);
     renderGrowth(mix, weights);
     renderPriceCharts(trades);
+    syncTabs();
     msg.textContent = "";
     $("#results").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (err) {
@@ -431,6 +432,35 @@ function sanityChecks(trades, md) {
     notes.push(`Industry data runs through ${lastDay ? lastDay : monthName(lastData)}, so the most recent weeks aren't part of the industry comparisons yet.`);
   }
   return notes;
+}
+
+// ---------------------------------------------------------------------------
+// Result tabs: one section at a time, so the page is not one long scroll
+// ---------------------------------------------------------------------------
+
+let activeTab = "card-luck";
+function selectTab(id) {
+  const tabs = [...document.querySelectorAll("#result-tabs [data-tab]")].filter((b) => !b.hidden);
+  if (!tabs.some((b) => b.dataset.tab === id)) id = tabs[0]?.dataset.tab;
+  activeTab = id;
+  for (const b of document.querySelectorAll("#result-tabs [data-tab]")) {
+    const on = b.dataset.tab === id;
+    b.setAttribute("aria-selected", String(on));
+    $(`#${b.dataset.tab}`).classList.toggle("is-off", !on);
+    if (on) { const bar = $("#result-tabs"); bar.scrollLeft = b.offsetLeft - (bar.clientWidth - b.offsetWidth) / 2; }
+  }
+}
+function syncTabs() {
+  // The price-chart tab only exists when price files were attached.
+  const charts = document.querySelector('#result-tabs [data-tab="card-charts"]');
+  charts.hidden = $("#card-charts").hidden;
+  selectTab(activeTab);
+}
+function initTabs() {
+  $("#result-tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tab]");
+    if (b) selectTab(b.dataset.tab);
+  });
 }
 
 function showProblem(html) {
@@ -808,6 +838,7 @@ function init() {
   $("#btn-template").addEventListener("click", downloadTemplate);
   $("#btn-export").addEventListener("click", exportRows);
   $("#file-broker").addEventListener("change", onBrokerFile);
+  initTabs();
   jobSel.addEventListener("change", () => { state.job = jobSel.value; saveTradesSoon(); });
   $("#price-list").addEventListener("change", onAttach);
   $("#price-list").addEventListener("click", (e) => {

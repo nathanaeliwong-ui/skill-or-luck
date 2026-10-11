@@ -121,6 +121,16 @@
       <div class="stats" id="stat-cards"></div>
       <div id="problems" class="notice warn" hidden></div>
 
+      <div class="tabs" id="result-tabs" role="tablist" aria-label="Result sections">
+        <button type="button" role="tab" data-tab="card-luck" aria-selected="true">Luck test</button>
+        <button type="button" role="tab" data-tab="card-holding" aria-selected="false">Selling habits</button>
+        <button type="button" role="tab" data-tab="card-mix" aria-selected="false">Portfolio</button>
+        <button type="button" role="tab" data-tab="card-job" aria-selected="false">Job risk</button>
+        <button type="button" role="tab" data-tab="card-stress" aria-selected="false">Crash tests</button>
+        <button type="button" role="tab" data-tab="card-growth" aria-selected="false">Growth</button>
+        <button type="button" role="tab" data-tab="card-charts" aria-selected="false" hidden>Your trades</button>
+      </div>
+
       <article class="card" id="card-luck">
         <h2>The luck test</h2>
         <div class="card-body" id="luck-body"></div>
