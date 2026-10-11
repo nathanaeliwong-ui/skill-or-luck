@@ -84,6 +84,18 @@ function mk6() { // 30 trades, all one industry and the same dates: one bet, so 
 }
 assert(!clustered.enough && clustered.clusters === 1 && clustered.n === 30, "30 identical-window trades count as one bet");
 
+// --- second stress round ---
+assert(E.normalizeDate("13/05/2024") === "2024-05-13", "day-first when first number > 12");
+assert(E.normalizeDate("03/05/2024", "dmy") === "2024-05-03", "explicit day-first order");
+assert(E.normalizeDate("5 March 2024") === "2024-03-05" && E.normalizeDate("Mar 5, 2024") === "2024-03-05", "spelled-out dates");
+for (const junk of ["12", "0", "2024", "Mar 5", "Jan 2024", "abc 5"]) assert(E.normalizeDate(junk) === null, `vague date rejected: ${junk}`);
+const eu = E.importBrokerCsv("Date,Action,Symbol,Quantity,Price\n03/05/2024,Buy,AAA,1,10\n25/05/2024,Sell,AAA,1,12").trades;
+assert(eu.length === 1 && eu[0].buyDate === "2024-05-03" && eu[0].sellDate === "2024-05-25", "day-first file read consistently");
+const cp = E.parsePriceCsv("Date,Close\n25/05/2024,11\n03/05/2024,10");
+assert(cp[0].d === "2024-05-03" && cp[1].d === "2024-05-25", "day-first price file");
+const lk = E.luckTest(mk6(), mdd, { sims: 200 });
+assert(lk.ci === undefined, "no interval when there are too few bets");
+
 // FIFO
 const fifo = E.fifoMatch([
   {ticker:"AAA", date:"2020-01-02", side:"buy", qty:10, price:10},

@@ -241,7 +241,7 @@ async function fetchAlphaVantage() {
   const batch = todo.slice(0, 25);
   avBusy = true;
   $("#btn-av").disabled = true;
-  let done = 0;
+  let done = 0, failures = 0;
   try {
     for (let i = 0; i < batch.length; i++) {
       const t = batch[i];
@@ -256,13 +256,21 @@ async function fetchAlphaVantage() {
       const url = `https://www.alphavantage.co/query?function=TIME_SERIES_MONTHLY_ADJUSTED&symbol=${encodeURIComponent(t)}&apikey=${encodeURIComponent(key)}`;
       try {
         const res = await fetch(url);
-        const points = E.parseAlphaVantage(await res.json());
+        if (!res.ok) throw new Error(`Alpha Vantage answered with HTTP ${res.status}`);
+        const json = await res.json().catch(() => { throw new Error("Alpha Vantage sent something unexpected"); });
+        const points = E.parseAlphaVantage(json);
         if (points.length < 2) throw new Error("no price history returned");
         setPrices(t, points, "Alpha Vantage, monthly");
         done++;
+        failures = 0;
         renderPriceList();
       } catch (err) {
         const msg = String(err.message || err);
+        // Three failures in a row means the problem is the connection or the key, not one ticker.
+        if (++failures >= 3) {
+          status.textContent = `Stopped after 3 failed requests (${msg.slice(0, 100)}). Check your connection and key, then try again.`;
+          return;
+        }
         if (/rate limit|requests per day|premium|frequency/i.test(msg)) {
           status.textContent = `Stopped: Alpha Vantage says "${msg.slice(0, 160)}"`;
           return;
@@ -283,7 +291,12 @@ async function fetchAlphaVantage() {
 // ---------------------------------------------------------------------------
 
 const CSV_HEAD = "ticker,buy_date,buy_price,shares,sell_date,sell_price,current_price,industry";
-const csvCell = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ""));
+// Quote cells that need it, and defuse spreadsheet formulas (a text cell starting with = + - @).
+const csvCell = (v) => {
+  let t = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(t) && !Number.isFinite(Number(t))) t = `'${t}`;
+  return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+};
 
 function exportRows() {
   const lines = [CSV_HEAD, ...state.rows.filter((r) => r.ticker).map((r) =>
@@ -785,16 +798,40 @@ function renderPriceCharts(trades) {
 // Wiring
 // ---------------------------------------------------------------------------
 
+// Saved data comes from the browser's storage, so treat it as untrusted: a corrupted or
+// hand-edited entry must never stop the page from starting.
+const ROW_FIELDS = ["ticker", "industry", "buyDate", "buyPrice", "qty", "sellDate", "sellPrice", "currentPrice"];
+function cleanRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r) => r && typeof r === "object" && !Array.isArray(r))
+    .slice(0, 20000)
+    .map((r) => Object.fromEntries(ROW_FIELDS.map((f) => [f, typeof r[f] === "string" || typeof r[f] === "number" ? String(r[f]) : ""])));
+}
+function cleanPrices(prices) {
+  const out = {};
+  if (!prices || typeof prices !== "object" || Array.isArray(prices)) return out;
+  for (const [ticker, p] of Object.entries(prices)) {
+    if (!p || !Array.isArray(p.points)) continue;
+    const points = p.points.filter((x) => x && typeof x.d === "string" && Number.isFinite(x.c) && x.c > 0);
+    if (points.length < 2) continue;
+    out[ticker] = { ...p, points, source: typeof p.source === "string" ? p.source : "file", splits: Array.isArray(p.splits) ? p.splits : undefined };
+  }
+  return out;
+}
+
 function init() {
   const jobSel = $("#job-select");
   jobSel.add(new Option("Skip this check", ""));
   for (const [code, label] of Object.entries(E.JOB_INDUSTRIES)) jobSel.add(new Option(label, code));
 
   const saved = load(STORE_TRADES, null);
-  state.prices = load(STORE_PRICES, {}) || {};
+  state.prices = cleanPrices(load(STORE_PRICES, {}));
   const key = load(STORE_KEY, "");
-  if (key) { $("#av-key").value = key; $("#av-remember").checked = true; }
-  setRows(saved?.rows?.length ? saved.rows : [blankRow(), blankRow(), blankRow()], saved?.job ?? "");
+  if (key && typeof key === "string") { $("#av-key").value = key; $("#av-remember").checked = true; }
+  const savedRows = cleanRows(saved?.rows);
+  const savedJob = typeof saved?.job === "string" && saved.job in E.JOB_INDUSTRIES ? saved.job : "";
+  setRows(savedRows.length ? savedRows : [blankRow(), blankRow(), blankRow()], savedJob);
 
   $("#trades-body").addEventListener("input", onTableInput);
   $("#trades-body").addEventListener("change", (e) => { onTableInput(e); if (e.target.dataset.f === "ticker") renderPriceList(); });

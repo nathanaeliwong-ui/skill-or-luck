@@ -48,7 +48,7 @@ function monthStartTime(idx) {
  * Handles 2024-03-05, 2024/03/05, 20240305, 03/05/2024 (US order), 05.03.2024 (EU order),
  * and strings with extra text such as Schwab's "03/05/2024 as of 03/04/2024".
  */
-export function normalizeDate(raw) {
+export function normalizeDate(raw, order = "mdy") {
   const s = String(raw ?? "").trim();
   let m;
   const ok = (y, mo, d) => {
@@ -57,16 +57,23 @@ export function normalizeDate(raw) {
   };
   if ((m = /(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(s))) return ok(+m[1], +m[2], +m[3]);
   if ((m = /^(\d{4})(\d{2})(\d{2})$/.exec(s))) return ok(+m[1], +m[2], +m[3]);
-  if ((m = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(s))) {
+  // 03/05/2024 or 03-05-2024: month first unless the file is known to be day first, or the
+  // first number can only be a day (13/05/2024).
+  if ((m = /(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/.exec(s))) {
     let y = +m[3];
     if (y < 100) y += y > 50 ? 1900 : 2000;
-    return ok(y, +m[1], +m[2]);
+    const dayFirst = order === "dmy" || +m[1] > 12;
+    return dayFirst ? ok(y, +m[2], +m[1]) : ok(y, +m[1], +m[2]);
   }
   if ((m = /(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(s))) return ok(+m[3], +m[2], +m[1]);
-  const parsed = Date.parse(s); // e.g. "Mar 5, 2024"
-  if (!Number.isNaN(parsed)) {
-    const d = new Date(parsed);
-    return ok(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  // Spelled-out dates only ("Mar 5, 2024", "5 March 2024"). Anything vaguer, such as "12" or
+  // "Mar 5", would be guessed into a wrong year by Date.parse, so it is rejected.
+  if (/^[A-Za-z]{3,9}\.?\s+\d{1,2}(st|nd|rd|th)?,?\s+\d{4}\b/.test(s) || /^\d{1,2}(st|nd|rd|th)?\s+[A-Za-z]{3,9}\.?,?\s+\d{4}\b/.test(s)) {
+    const parsed = Date.parse(s.replace(/(\d)(st|nd|rd|th)\b/, "$1"));
+    if (!Number.isNaN(parsed)) {
+      const d = new Date(parsed);
+      return ok(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    }
   }
   return null;
 }
@@ -416,8 +423,9 @@ export function parsePriceCsv(text) {
     }
     if (di < 0 || ci < 0) continue;
     const out = [];
+    const dayFirst = rows.slice(h + 1).some((r) => { const dm = /^\s*(\d{1,2})[/-]\d{1,2}[/-]\d{2,4}/.exec(String(r[di] ?? "")); return dm && +dm[1] > 12; });
     for (const r of rows.slice(h + 1)) {
-      const d = normalizeDate(r[di]);
+      const d = normalizeDate(r[di], dayFirst ? "dmy" : "mdy");
       const c = parseNumber(r[ci]);
       if (d && Number.isFinite(c) && c > 0) out.push({ d, c });
     }
@@ -545,6 +553,15 @@ export function importBrokerCsv(text) {
   if (h < 0) throw new Error("Couldn't find symbol and quantity columns. Use the template, or check the file is a trade history export.");
 
   const ix = Object.fromEntries(Object.entries(COLS).map(([k, names]) => [k, findCol(header, names)]));
+  // 03/05/2024 is March 5 or May 3 depending on the broker. If any date in the file has a first
+  // number above 12 it must be day first, so read the whole file that way.
+  let order = "mdy";
+  for (const r of rows.slice(h + 1)) {
+    for (const c of [ix.date, ix.sellDate]) {
+      const dm = c >= 0 ? /^\s*(\d{1,2})[/-](\d{1,2})[/-]\d{2,4}/.exec(String(r[c] ?? "")) : null;
+      if (dm && +dm[1] > 12) order = "dmy";
+    }
+  }
   const warnings = [];
   let skipped = 0;
   const events = [];
@@ -555,7 +572,7 @@ export function importBrokerCsv(text) {
 
   for (const r of rows.slice(h + 1)) {
     const ticker = String(r[ix.ticker] || "").trim().toUpperCase();
-    const date = ix.date >= 0 ? normalizeDate(r[ix.date]) : null;
+    const date = ix.date >= 0 ? normalizeDate(r[ix.date], order) : null;
     let qty = parseNumber(r[ix.qty]);
     const price = ix.price >= 0 ? Math.abs(parseNumber(r[ix.price])) : NaN;
     if (!ticker || !/^[A-Z0-9.\-^=]{1,15}$/.test(ticker) || !date || !Number.isFinite(qty) || qty === 0 || !(price > 0)) {
@@ -572,7 +589,7 @@ export function importBrokerCsv(text) {
       if (!side) { skipped++; continue; }
       events.push({ ticker, date, side, qty: Math.abs(qty), price });
     } else {
-      const sellDate = ix.sellDate >= 0 ? normalizeDate(r[ix.sellDate]) : null;
+      const sellDate = ix.sellDate >= 0 ? normalizeDate(r[ix.sellDate], order) : null;
       const sellPrice = ix.sellPrice >= 0 ? parseNumber(r[ix.sellPrice]) : NaN;
       const currentPrice = ix.currentPrice >= 0 ? parseNumber(r[ix.currentPrice]) : NaN;
       const industry = ix.industry >= 0 ? String(r[ix.industry] || "").trim() : "";
@@ -758,6 +775,18 @@ export function clusterTrades(trades) {
 }
 
 /**
+ * 95% interval from a bootstrap: the estimate plus or minus a Student-t multiple of the
+ * bootstrap standard error. Plain percentile intervals are too narrow with few bets
+ * (about 87% coverage with 10 bets), so the error is scaled up for the number of groups.
+ */
+function bootstrapInterval(estimate, boots, groups) {
+  const se = stdev(Array.from(boots)) * Math.sqrt(groups / (groups - 1));
+  const z = 1.95996, df = groups - 1;
+  const t = z + (z ** 3 + z) / (4 * df) + (5 * z ** 5 + 16 * z ** 3 + 3 * z) / (96 * df * df);
+  return [estimate - t * se, estimate + t * se];
+}
+
+/**
  * The luck test. Each trade's return is compared with its own industry over the exact
  * same holding window. If you had no stock-picking edge, beating or trailing the industry
  * by a given amount would be equally likely, so we flip the sign of each trade's excess
@@ -835,7 +864,7 @@ export function luckTest(trades, md, { sims = 10000, seed = 42 } = {}) {
     sdExcess: sd,
     pValue,
     percentile,
-    ci: [quantile(sortedBoots, 0.025), quantile(sortedBoots, 0.975)],
+    ci: bootstrapInterval(obs, boots, clusters),
     wins, winsMkt,
     groupWins,
     winPValue: binomialUpperTail(groupWins, clusters),
