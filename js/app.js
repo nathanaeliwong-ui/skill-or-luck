@@ -223,7 +223,7 @@ async function onAttach(e) {
     const points = E.parsePriceCsv(await input.files[0].text());
     setPrices(ticker, points, "file");
   } catch (err) {
-    alert(`${ticker}: ${err.message}`);
+    $("#av-status").textContent = `${ticker}: ${err.message}`;
   }
   renderPriceList();
 }
@@ -312,17 +312,14 @@ async function onBrokerFile(e) {
       sellDate: t.sellDate || "", sellPrice: t.sellPrice ? String(t.sellPrice) : "", currentPrice: t.currentPrice ? String(t.currentPrice) : "",
     }));
     const existing = state.rows.filter((r) => r.ticker);
-    let merged = rows;
-    if (existing.length) {
-      const replace = confirm(`Replace your ${existing.length} current trades with the ${rows.length} from this file?\n\nOK = replace, Cancel = add them to the end.`);
-      merged = replace ? rows : [...existing, ...rows];
-    }
-    setRows(merged);
+    setRows(existing.length ? [...existing, ...rows] : rows);
     const open = rows.filter((r) => !r.sellDate).length;
     box.className = "notice ok";
     box.innerHTML = `Imported ${rows.length} trade${rows.length === 1 ? "" : "s"} from ${esc(file.name)}${skipped ? ` (skipped ${skipped} rows that weren't buys or sells, such as dividends and transfers)` : ""}.`
       + (open ? ` Add <strong>today's price</strong> for the ${open} position${open === 1 ? "" : "s"} you still hold, or attach price files in step 2.` : "")
-      + (warnings.length ? `<ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : "");
+      + (warnings.length ? `<ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` : "")
+      + (existing.length ? ` <button type="button" class="btn" id="btn-replace">Use only these ${rows.length} trades</button>` : "");
+    $("#btn-replace")?.addEventListener("click", () => { setRows(rows); $("#btn-replace").remove(); });
   } catch (err) {
     box.className = "notice warn";
     box.textContent = `Couldn't read ${file.name}: ${err.message}`;
@@ -370,9 +367,11 @@ async function run() {
     const { trades, problems } = E.prepareTrades(state.rows, asOf, pts);
     if (!trades.length) {
       msg.textContent = "Add at least one complete trade first (ticker, buy date, buy price and shares), or try the sample.";
+      $("#results").hidden = true;
+      if (problems.length) msg.textContent += ` ${problems.join(" ")}`;
       return;
     }
-    const notes = [...problems, ...sanityChecks(trades, md)];
+    const notes = [...problems.map(esc), ...sanityChecks(trades, md)];
     const exactMonthly = Object.fromEntries(Object.entries(state.prices).map(([t, p]) => [t, E.monthlyReturnsFromPrices(p.points)]));
 
     const perf = E.performance(trades, md);
@@ -450,8 +449,10 @@ function renderVerdict(L, P) {
   if (!L.enough) {
     head = "Not enough trades to tell yet";
     color = cssVar("--gold");
-    explain = `The luck test needs at least 5 trades with a known end price in stocks it can compare with an industry. It found ${L.n}.`
-      + (L.tooRecent ? ` ${L.tooRecent} more ${L.tooRecent === 1 ? "is" : "are"} too recent for the industry data.` : "");
+    explain = L.n >= 5
+      ? `Your ${L.n} trades are really only ${L.clusters} separate bet${L.clusters === 1 ? "" : "s"}. Trades in the same industry held over the same dates, or repeat buys of one stock, share the same luck, so they count once. The luck test needs at least 5 separate bets.`
+      : `The luck test needs at least 5 trades with a known end price in stocks it can compare with an industry. It found ${L.n}.`;
+    explain += L.tooRecent ? ` ${L.tooRecent} more ${L.tooRecent === 1 ? "is" : "are"} too recent for the industry data.` : "";
   } else {
     const med = pctLog(L.medianExcess);
     if (L.meanExcess <= 0) {
@@ -492,10 +493,12 @@ function renderStats(P, L) {
     cards.push(stat("You vs the market, in dollars", (diff >= 0 ? "+" : "") + money(diff), `${money(P.value)} vs ${money(P.mktValue)} ending value`, tone(diff)));
   }
   if (L.enough) {
-    cards.push(stat("Trades that beat their industry", `${L.wins} of ${L.n}`, `a coin-flipper does this well ${chance(L.winPValue)} of the time`));
+    cards.push(stat("Trades that beat their industry", `${L.wins} of ${L.n}`, L.clusters < L.n
+      ? `counting overlapping bets once (${L.groupWins} of ${L.clusters}), a coin-flipper does this well ${chance(L.winPValue)} of the time`
+      : `a coin-flipper does this well ${chance(L.winPValue)} of the time`));
     cards.push(stat("Trades needed to rule out luck",
-      L.tradesNeeded ? (L.tradesNeeded <= L.n ? `${L.tradesNeeded} ✓` : `~${L.tradesNeeded.toLocaleString()}`) : "—",
-      L.tradesNeeded ? `at your current edge; you have ${L.n}` : "no edge to prove yet"));
+      L.tradesNeeded ? (L.tradesNeeded <= L.clusters ? `${L.tradesNeeded} ✓` : `~${L.tradesNeeded.toLocaleString()}`) : "—",
+      L.tradesNeeded ? `separate bets at your current edge; you have ${L.clusters}` : "no edge to prove yet"));
   }
   $("#stat-cards").innerHTML = cards.join("");
 }
@@ -512,7 +515,7 @@ function renderLuck(L, md) {
   if (L.noProxy) exclude.push(`${L.noProxy} in bonds, gold, crypto or cash, which have no industry to compare with`);
   const includesZero = L.ci[0] < 0 && L.ci[1] > 0;
   body.innerHTML = `
-    <p>Each of your ${L.n} trades was compared with its own industry over the exact same dates. If you had no stock-picking skill, beating or trailing the industry would be a coin flip. We simulated 10,000 investors with no skill, using your trades' sizes of wins and losses with random signs.</p>
+    <p>Each of your ${L.n} trades was compared with its own industry over the exact same dates. If you had no stock-picking skill, beating or trailing the industry would be a coin flip. We simulated 10,000 investors with no skill, using your trades' sizes of wins and losses with random signs.${L.clusters < L.n ? ` Your ${L.n} trades overlap enough to count as ${L.clusters} separate bets, and each bet is flipped as a unit.` : ""}</p>
     <div class="legend"><span><i style="background:${cssVar("--market")};opacity:.5"></i>No-skill investors</span><span><i style="background:${cssVar("--gold")}"></i>Did at least as well as you (${chance(L.pValue)})</span><span><i style="background:${cssVar("--ink")}"></i>You</span></div>
     ${histogramSvg(L.histogram)}
     <p>Your average trade ${L.meanExcess >= 0 ? "beat" : "trailed"} its industry by <strong>${pct(Math.abs(Math.exp(L.meanExcess) - 1), 1, false)}</strong> (median ${pctLog(L.medianExcess)}). You did better than <strong>${Math.round(L.percentile * 100)}%</strong> of the no-skill investors.</p>
@@ -787,8 +790,15 @@ function init() {
     box.className = "notice";
     box.innerHTML = "Loaded 20 sample trades with approximate historical prices. The four positions still held have no price today, so they count toward your mix but not your returns. Press <strong>Run the analysis</strong>.";
   });
-  $("#btn-clear").addEventListener("click", () => {
-    if (!confirm("Clear all trades and saved price files from this browser?")) return;
+  let clearTimer = null;
+  $("#btn-clear").addEventListener("click", (ev) => {
+    const btn = ev.currentTarget;
+    if (!clearTimer) {
+      btn.textContent = "Click again to clear everything";
+      clearTimer = setTimeout(() => { btn.textContent = "Clear"; clearTimer = null; }, 4000);
+      return;
+    }
+    clearTimeout(clearTimer); clearTimer = null; btn.textContent = "Clear";
     state.prices = {};
     remove(STORE_PRICES);
     setRows([blankRow(), blankRow(), blankRow()], "");

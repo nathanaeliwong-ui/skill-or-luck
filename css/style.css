@@ -118,7 +118,7 @@ h1 { font: 700 clamp(2.3rem, 7vw, 4.5rem)/1.04 var(--sans); letter-spacing: -.03
 .link-arrow::after { content: " ›"; }
 
 /* Steps ------------------------------------------------------------------- */
-main.wrap { display: grid; gap: 20px; padding-bottom: 20px; }
+main.wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 20px; }
 .step { background: var(--card); border-radius: var(--r-lg); padding: clamp(24px, 4vw, 44px); box-shadow: var(--shadow); scroll-margin-top: 68px; }
 .step-head { margin-bottom: 24px; }
 .step-num { display: block; font-size: .85rem; font-weight: 600; color: var(--accent); letter-spacing: 0; margin-bottom: 6px; }
@@ -198,7 +198,7 @@ table.trades { border-collapse: collapse; width: 100%; min-width: 920px; }
 .notice ul { margin: 6px 0 0; padding-left: 18px; }
 
 /* Results ----------------------------------------------------------------- */
-#results { display: grid; gap: 20px; padding-bottom: 20px; }
+#results { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 20px; }
 #results > * { margin: 0; min-width: 0; }
 .verdict { border-radius: var(--r-lg); background: var(--card); padding: clamp(28px, 5vw, 56px); box-shadow: var(--shadow); text-align: center; }
 .verdict .label { font: 600 .8rem/1 var(--sans); letter-spacing: .02em; color: var(--muted); margin: 0 0 14px; }

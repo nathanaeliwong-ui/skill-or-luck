@@ -57,6 +57,33 @@ assert(mdd.windowGrowth("BusEq", "2020-03-03", "2020-03-03").growth === 1, "same
 const past = mdd.windowGrowth("MKT", "2026-06-01", "2026-12-31");
 assert(past.covered > 0.4 && past.covered < 0.5, "daily coverage beyond data end " + past.covered.toFixed(2));
 
+
+// --- stress-test regressions ---
+// Signed-quantity history (Interactive Brokers style): negative quantity is a sell, not silently dropped.
+const ibkr = E.importBrokerCsv('Symbol,Date/Time,Quantity,T. Price\nAAPL,"2024-03-05, 10:30:00",10,170.5\nAAPL,"2024-06-05, 11:00:00",-4,195').trades;
+assert(ibkr.length === 2 && ibkr[0].sellDate === "2024-06-05" && ibkr[0].qty === 4, "signed-quantity history is matched FIFO");
+assert(E.prepareTrades([{ ticker: "D", buyDate: "2024-01-02", buyPrice: "1e308", qty: 1e308 }], "2026-10-11").trades.length === 0, "absurd amounts rejected");
+
+// Overlapping same-industry trades (and DCA lots sold together) are one bet; sequential trades are not.
+const mkT = (ticker, industry, buyDate, exitDate) => ({ ticker, industry, buyDate, exitDate });
+const grp = E.clusterTrades([
+  mkT("NVDA", "BusEq", "2023-01-02", "2023-12-29"), mkT("AMD", "BusEq", "2023-01-20", "2023-12-15"),
+  mkT("AAPL", "BusEq", "2023-02-01", "2023-11-30"), mkT("XOM", "Enrgy", "2023-01-02", "2023-12-29"),
+  mkT("AMD", "BusEq", "2015-01-02", "2015-03-01"), mkT("AMD", "BusEq", "2015-01-20", "2015-04-01"),
+]);
+assert(grp[0] === grp[1] && grp[1] === grp[2], "same industry, overlapping dates -> one group");
+assert(grp[3] !== grp[0], "different industry -> separate group");
+const seqG = E.clusterTrades([mkT("MSFT", "BusEq", "2020-01-02", "2020-02-03"), mkT("MSFT", "BusEq", "2020-02-10", "2020-03-20"), mkT("MSFT", "BusEq", "2020-04-01", "2020-05-01")]);
+assert(new Set(seqG).size === 3, "back-to-back trades in one stock stay separate bets");
+assert(grp[4] === grp[5] && grp[4] !== grp[0], "overlapping lots of one stock group together");
+const clustered = E.luckTest(mk6(), mdd, { sims: 500 });
+function mk6() { // 30 trades, all one industry and the same dates: one bet, so no verdict
+  const rows = [];
+  for (let i = 0; i < 30; i++) rows.push({ ticker: "T" + i, industry: "BusEq", buyDate: "2020-01-02", buyPrice: 100, qty: 1, sellDate: "2021-01-04", sellPrice: 150 });
+  return E.prepareTrades(rows, "2026-10-11").trades;
+}
+assert(!clustered.enough && clustered.clusters === 1 && clustered.n === 30, "30 identical-window trades count as one bet");
+
 // FIFO
 const fifo = E.fifoMatch([
   {ticker:"AAA", date:"2020-01-02", side:"buy", qty:10, price:10},

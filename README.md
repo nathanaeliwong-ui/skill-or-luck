@@ -4,7 +4,7 @@ A free website that answers one question for individual investors: **did you bea
 
 Visitors enter their trades (or import a broker export) and the page runs the tests a fund analyst would:
 
-- **The luck test** compares every trade with its own industry over the exact same dates, then simulates 10,000 investors with no skill to see how often they'd match your results.
+- **The luck test** compares every trade with its own industry over the exact same dates, then simulates 10,000 investors with no skill to see how often they'd match your results. Trades that share the same luck (same industry, mostly overlapping dates) count as one bet, so ten chip stocks bought together can't masquerade as ten independent wins.
 - **Trades needed** to rule out luck at your current edge.
 - **Your return vs the market**: money-weighted return (XIRR) against the same cash put into the whole market on the same dates.
 - **Selling habits**: do you sell winners quickly and sit on losers (the disposition effect)?
@@ -57,6 +57,7 @@ sample/trades-template.csv     import template
 ## Limits worth knowing
 
 - Industry data is published about a month behind, so trades in the most recent weeks can't be tested yet.
+- Bets in different industries are treated as independent, though a market-wide swing can still move them together.
 - Industry proxies stand in for individual stocks unless the visitor attaches real prices, so exposures and crash tests are estimates.
 - Trade returns are price changes only; dividends received aren't counted, while industry returns include dividends.
 - The ticker-to-industry list covers a few hundred popular stocks and funds. Visitors can change any guess.

@@ -507,7 +507,7 @@ export function priceOnOrBefore(points, dateStr) {
 
 const COLS = {
   ticker: ["symbol", "ticker", "instrument", "stock symbol", "security symbol", "code"],
-  date: ["trade date", "transaction date", "activity date", "run date", "date", "date acquired", "acquired", "open date", "purchase date", "buy date", "process date", "settlement date", "time"],
+  date: ["trade date", "transaction date", "activity date", "run date", "date", "date acquired", "acquired", "open date", "purchase date", "buy date", "process date", "settlement date", "time", "date/time", "datetime"],
   side: ["action", "side", "trans code", "transaction type", "type", "activity", "buy/sell", "activity type", "transaction"],
   qty: ["quantity", "qty", "shares", "units", "no of shares", "number of shares", "share", "amount of shares"],
   price: ["price", "price per share", "trade price", "unit price", "execution price", "price $", "cost/share", "purchase price", "buy price", "avg price", "average price", "cost per share"],
@@ -549,6 +549,9 @@ export function importBrokerCsv(text) {
   let skipped = 0;
   const events = [];
   const lots = [];
+  // No action column and no sell columns, but negative quantities: a signed-quantity history
+  // (Interactive Brokers style). Treat positive as buys and negative as sells.
+  const signed = ix.side < 0 && ix.sellDate < 0 && rows.slice(h + 1).some((r) => parseNumber(r[ix.qty]) < 0);
 
   for (const r of rows.slice(h + 1)) {
     const ticker = String(r[ix.ticker] || "").trim().toUpperCase();
@@ -559,10 +562,11 @@ export function importBrokerCsv(text) {
       skipped++;
       continue;
     }
-    if (ix.side >= 0) {
-      const s = String(r[ix.side] || "").toLowerCase();
+    if (ix.side >= 0 || signed) {
+      const s = ix.side >= 0 ? String(r[ix.side] || "").toLowerCase() : "";
       let side = null;
-      if (/\b(buy|bought|purchase|bot|reinvest)/.test(s)) side = "buy";
+      if (ix.side < 0) side = qty > 0 ? "buy" : "sell";
+      else if (/\b(buy|bought|purchase|bot|reinvest)/.test(s)) side = "buy";
       else if (/\b(sell|sold|sld|sale)/.test(s)) side = "sell";
       else if (!s.trim()) side = qty > 0 ? "buy" : "sell";
       if (!side) { skipped++; continue; }
@@ -661,6 +665,10 @@ export function prepareTrades(rawTrades, asOf, prices = {}) {
     if ((r.sellDate || r.sellPrice) && !closed) {
       problems.push(`Row ${i + 1} (${ticker}): a sold position needs both a sell date and a sell price.`);
     }
+    if (!(buyPrice * qty < 1e12)) {
+      problems.push(`Row ${i + 1} (${ticker}): the amount is too large to be real. Check the price and number of shares.`);
+      return;
+    }
     if (closed && sellDate < buyDate) {
       problems.push(`Row ${i + 1} (${ticker}): the sell date is before the buy date.`);
       return;
@@ -723,6 +731,33 @@ export function performance(trades, md) {
 }
 
 /**
+ * Group trades that share the same luck. A trade joins an existing group when it is in the
+ * same industry and its holding window overlaps the group's first trade by at least half of
+ * the shorter window. That puts ten chip stocks bought the same week, or monthly purchases
+ * of one stock sold together, into one group, while trades that happen one after another
+ * stay separate. The luck test treats a group, not a trade, as one independent bet.
+ * Returns an array of group ids, one per trade.
+ */
+export function clusterTrades(trades) {
+  const s = trades.map((t) => toTime(t.buyDate)), e = trades.map((t) => toTime(t.exitDate));
+  const order = trades.map((_, i) => i).sort((a, b) => s[a] - s[b]);
+  const anchors = []; // trade index that opened each group
+  const group = new Array(trades.length);
+  for (const i of order) {
+    let found = -1;
+    for (let g = 0; g < anchors.length; g++) {
+      const a = anchors[g];
+      if (trades[a].industry !== trades[i].industry) continue;
+      const overlap = Math.min(e[a], e[i]) - Math.max(s[a], s[i]);
+      if (overlap > 0 && overlap >= 0.5 * Math.min(e[a] - s[a], e[i] - s[i])) { found = g; break; }
+    }
+    if (found < 0) { anchors.push(i); found = anchors.length - 1; }
+    group[i] = found;
+  }
+  return group;
+}
+
+/**
  * The luck test. Each trade's return is compared with its own industry over the exact
  * same holding window. If you had no stock-picking edge, beating or trailing the industry
  * by a given amount would be equally likely, so we flip the sign of each trade's excess
@@ -739,18 +774,26 @@ export function luckTest(trades, md, { sims = 10000, seed = 42 } = {}) {
     usable.push({ ...t, bench: Math.log(g.growth), excess: t.logReturn - Math.log(g.growth), excessMkt: t.logReturn - Math.log(m.growth) });
   }
   const n = usable.length;
-  const base = { n, tooRecent: tooRecent.length, noProxy: noProxy.length, trades: usable };
-  if (n < 5) return { ...base, enough: false };
+  const group = clusterTrades(usable);
+  const clusters = new Set(group).size;
+  const base = { n, clusters, tooRecent: tooRecent.length, noProxy: noProxy.length, trades: usable };
+  if (n < 5 || clusters < 5) return { ...base, enough: false };
 
   const ex = usable.map((t) => t.excess);
   const obs = mean(ex);
   const sd = stdev(ex);
   const rand = rng(seed);
 
+  // Per-group sums and means of excess return. Under "no skill" each group is as likely to
+  // have beaten its industry as trailed it, so we flip whole groups, not single trades.
+  const gSums = new Float64Array(clusters), gCounts = new Float64Array(clusters);
+  usable.forEach((t, i) => { gSums[group[i]] += ex[i]; gCounts[group[i]]++; });
+  const gMeans = Array.from(gSums, (v, g) => v / gCounts[g]);
+
   const nullMeans = new Float64Array(sims);
   for (let s = 0; s < sims; s++) {
     let sum = 0;
-    for (let i = 0; i < n; i++) sum += rand() < 0.5 ? ex[i] : -ex[i];
+    for (let g = 0; g < clusters; g++) sum += rand() < 0.5 ? gSums[g] : -gSums[g];
     nullMeans[s] = sum / n;
   }
   let atLeast = 0, below = 0;
@@ -761,19 +804,21 @@ export function luckTest(trades, md, { sims = 10000, seed = 42 } = {}) {
   const pValue = (atLeast + 1) / (sims + 1);
   const percentile = below / sims;
 
-  // Bootstrap 95% interval for the average excess return per trade.
+  // Bootstrap 95% interval for the average excess return per trade, resampling whole groups.
   const boots = new Float64Array(4000);
   for (let b = 0; b < boots.length; b++) {
-    let sum = 0;
-    for (let i = 0; i < n; i++) sum += ex[Math.floor(rand() * n)];
-    boots[b] = sum / n;
+    let sum = 0, cnt = 0;
+    for (let g = 0; g < clusters; g++) { const k = Math.floor(rand() * clusters); sum += gSums[k]; cnt += gCounts[k]; }
+    boots[b] = sum / cnt;
   }
   const sortedBoots = Array.from(boots).sort((a, b) => a - b);
 
   const wins = ex.filter((e) => e > 0).length;
   const winsMkt = usable.filter((t) => t.excessMkt > 0).length;
+  const groupWins = gMeans.filter((m) => m > 0).length;
   const z = 1.6449; // one-sided 5% significance
-  const tradesNeeded = obs > 0 && sd > 0 ? Math.ceil((z * sd / obs) ** 2) : null;
+  const gObs = mean(gMeans), gSd = stdev(gMeans);
+  const tradesNeeded = gObs > 0 && gSd > 0 ? Math.ceil((z * gSd / gObs) ** 2) : null;
 
   // Histogram of the "no skill" averages, for the chart.
   const sortedNull = Array.from(nullMeans).sort((a, b) => a - b);
@@ -792,7 +837,8 @@ export function luckTest(trades, md, { sims = 10000, seed = 42 } = {}) {
     percentile,
     ci: [quantile(sortedBoots, 0.025), quantile(sortedBoots, 0.975)],
     wins, winsMkt,
-    winPValue: binomialUpperTail(wins, n),
+    groupWins,
+    winPValue: binomialUpperTail(groupWins, clusters),
     tradesNeeded,
     histogram: { lo, width, counts, observed: obs },
   };
