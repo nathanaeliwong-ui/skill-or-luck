@@ -215,7 +215,7 @@ function invert(M) {
 /** Annualised money-weighted return (XIRR). flows: [{t: ms, amount}] (negative = money in). */
 export function xirr(flows) {
   if (flows.length < 2) return null;
-  const t0 = Math.min(...flows.map((f) => f.t));
+  const t0 = flows.reduce((m, f) => Math.min(m, f.t), Infinity);   // no spread: lists can be huge
   const npv = (r) => flows.reduce((s, f) => s + f.amount / Math.pow(1 + r, (f.t - t0) / (365.25 * DAY_MS)), 0);
   let lo = -0.9999, hi = 10;
   let flo = npv(lo), fhi = npv(hi);
@@ -1012,8 +1012,8 @@ export function marketTest(trades, md, { sims = 10000, seed = 13 } = {}) {
   const main = measure("excess");
   const risk = measure("excessRisk");
 
-  const first = Math.min(...usable.map((t) => toTime(t.buyDate)));
-  const last = Math.max(...usable.map((t) => toTime(t.exitDate)));
+  const first = usable.reduce((m, t) => Math.min(m, toTime(t.buyDate)), Infinity);
+  const last = usable.reduce((m, t) => Math.max(m, toTime(t.exitDate)), -Infinity);
   const span = Math.max(1 / 12, (last - first) / (365.25 * DAY_MS));
   // At today's edge and spread, how much longer a record like this one would need to be
   // for the top label (one-sided 95%). Null when there's no positive edge to confirm.
@@ -1044,6 +1044,8 @@ export function holdingTest(trades, { sims = 10000, seed = 7 } = {}) {
   const ll = losers.map((t) => Math.log(t.days));
   const obs = mean(ll) - mean(lw);
   const all = [...lw, ...ll];
+  // Each simulation shuffles every sold trade; keep very large imports (fund holdings) responsive.
+  sims = Math.min(sims, Math.max(500, Math.floor(2e7 / all.length)));
   const rand = rng(seed);
   let atLeast = 0;
   for (let s = 0; s < sims; s++) {

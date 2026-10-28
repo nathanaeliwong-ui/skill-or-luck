@@ -75,7 +75,11 @@ function pct(x, digits = 1, sign = true) {
 const pctLog = (x, d = 1) => pct(Math.exp(x) - 1, d);
 function money(x) {
   if (!Number.isFinite(x)) return "—";
-  const s = Math.abs(x).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  // Big amounts (a fund's holdings) shorten to $1.8M / $153.9B so they fit their box.
+  const big = Math.abs(x) >= 1e6;
+  const s = Math.abs(x).toLocaleString("en-US", big
+    ? { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }
+    : { style: "currency", currency: "USD", maximumFractionDigits: 0 });
   return (x < 0 ? "−" : "") + s;
 }
 const tone = (x) => (x > 0 ? "pos" : x < 0 ? "neg" : "");
@@ -123,11 +127,16 @@ function industryOptions(select, row) {
   select.title = auto ? (guess ? "Guessed from the ticker. Change it if it's wrong." : "Pick the closest industry.") : "";
 }
 
+// Very large imports (a fund's holdings) would mean a million form controls; show the first
+// rows for editing and keep the rest in the analysis.
+const TABLE_LIMIT = 1000;
+
 function renderTable() {
   const body = $("#trades-body");
   body.innerHTML = "";
   const tpl = $("#row-template");
-  state.rows.forEach((row, i) => {
+  const frag = document.createDocumentFragment();
+  state.rows.slice(0, TABLE_LIMIT).forEach((row, i) => {
     const tr = tpl.content.firstElementChild.cloneNode(true);
     tr.dataset.i = i;
     for (const input of tr.querySelectorAll("[data-f]")) {
@@ -136,8 +145,16 @@ function renderTable() {
       else input.value = row[f] ?? "";
     }
     tr.classList.toggle("closed", !!(row.sellDate || row.sellPrice));
-    body.appendChild(tr);
+    frag.appendChild(tr);
   });
+  body.appendChild(frag);
+  const more = state.rows.length - TABLE_LIMIT;
+  if (more > 0) {
+    const tr = document.createElement("tr");
+    tr.className = "more-rows";
+    tr.innerHTML = `<td colspan="9">${more.toLocaleString()} more rows are included in the analysis but not shown here. Edit them in the file and import it again.</td>`;
+    body.appendChild(tr);
+  }
   renderPriceList();
 }
 
@@ -182,13 +199,14 @@ function renderPriceList() {
   const list = $("#price-list");
   const ts = tickers();
   if (!ts.length) { list.innerHTML = ""; return; }
+  const im = industryMap();
   list.innerHTML = ts.map((t) => {
     const p = state.prices[t];
     const status = p
       ? `<span class="src exact">Exact · ${esc(p.source)} · ${p.points.length} prices to ${esc(p.points[p.points.length - 1].d)}${p.splits?.length ? ` · ${p.splits.length} split${p.splits.length > 1 ? "s" : ""} adjusted` : ""}</span>`
-      : rowIndustry(t) === "NONE"
+      : rowIndustry(t, im) === "NONE"
         ? `<span class="src">No industry proxy (bonds, gold, crypto, cash)</span>`
-        : `<span class="src">Using ${esc(SHORT[rowIndustry(t)])} industry as proxy</span>`;
+        : `<span class="src">Using ${esc(SHORT[rowIndustry(t, im)])} industry as proxy</span>`;
     const lower = encodeURIComponent(t.toLowerCase());
     return `<li>
       <div><span class="tk">${esc(t)}</span>${status}</div>
@@ -202,9 +220,14 @@ function renderPriceList() {
   }).join("");
 }
 
-function rowIndustry(ticker) {
-  const r = state.rows.find((x) => x.ticker === ticker && x.industry);
-  return r?.industry || E.guessIndustry(ticker) || "MKT";
+// One pass over the rows; looking each ticker up separately is slow with thousands of rows.
+function industryMap() {
+  const m = new Map();
+  for (const r of state.rows) if (r.ticker && r.industry && !m.has(r.ticker)) m.set(r.ticker, r.industry);
+  return m;
+}
+function rowIndustry(ticker, map = industryMap()) {
+  return map.get(ticker) || E.guessIndustry(ticker) || "MKT";
 }
 
 function setPrices(ticker, points, source) {
@@ -235,7 +258,8 @@ async function fetchAlphaVantage() {
   const status = $("#av-status");
   if (!key) { status.textContent = "Paste your free API key first."; return; }
   if ($("#av-remember").checked) save(STORE_KEY, key); else remove(STORE_KEY);
-  const todo = tickers().filter((t) => !state.prices[t] && rowIndustry(t) !== "NONE");
+  const im = industryMap();
+  const todo = tickers().filter((t) => !state.prices[t] && rowIndustry(t, im) !== "NONE");
   if (!todo.length) { status.textContent = "Every ticker already has exact prices (bonds, gold and crypto are skipped)."; return; }
   if (todo.length > 25) status.textContent = `The free key allows 25 requests a day; fetching the first 25 of ${todo.length}.`;
   const batch = todo.slice(0, 25);
@@ -422,7 +446,8 @@ async function run() {
 
 function sanityChecks(trades, md) {
   const notes = [];
-  const unknown = [...new Set(trades.filter((t) => !E.guessIndustry(t.ticker) && !state.rows.find((r) => r.ticker === t.ticker && r.industry)).map((t) => t.ticker))];
+  const im = industryMap();
+  const unknown = [...new Set(trades.filter((t) => !im.has(t.ticker) && !E.guessIndustry(t.ticker)).map((t) => t.ticker))];
   if (unknown.length) notes.push(`Not in the built-in list, so treated as the whole market: <strong>${unknown.map(esc).join(", ")}</strong>. Pick the right industry in the table for better results.`);
   const noPrice = [...new Set(trades.filter((t) => !t.closed && !t.currentPrice).map((t) => t.ticker))];
   if (noPrice.length) notes.push(`No price today for <strong>${noPrice.map(esc).join(", ")}</strong>, so ${noPrice.length === 1 ? "it's" : "they're"} left out of the return figures and the luck test. Type today's price in the table or attach price files.`);
@@ -532,6 +557,11 @@ function renderVerdict(M, L, P) {
       <div class="meter-labels">${LEVELS.map((l) => `<span${l.key === M.label ? ' class="on"' : ""}>${esc(l.name.replace(" the market", ""))}</span>`).join("")}</div>
     </div>`;
   const notes = [];
+  if (P && Number.isFinite(P.youIrr) && Number.isFinite(P.mktIrr) && (P.youIrr > P.mktIrr) !== (M.edge > 0)) {
+    // Money-weighted returns (the cards below) and the verdict can disagree when the account was
+    // much bigger in some years than others. Say why, so the two don't look contradictory.
+    notes.push(`Your money-weighted return (${pct(P.youIrr)} vs the market's ${pct(P.mktIrr)}, below) ${P.youIrr > P.mktIrr ? "beat" : "trailed"} the market because of when the most money was invested. The verdict judges each decision by its share of your portfolio at the time, the way fund managers are judged, so a bad stretch when the account was largest doesn't outweigh years of better picks.`);
+  }
   notes.push(`Adjusted for risk (your industries move about ${M.avgBeta.toFixed(2)}× as much as the market): ${pct(M.risk.edge)} a year, ${esc(LEVEL[M.risk.label].name.toLowerCase())}.`);
   if (L.enough) notes.push(`Stock picking within industries: your picks ${L.meanExcess > 0 ? "beat" : "trailed"} their own industry by ${pctLog(Math.abs(L.meanExcess)).replace("+", "")} per trade on average. See the Stock picking tab.`);
   notes.push(`${odds} Both sides are price changes only; dividends aren't counted for you or the market.`);
@@ -575,14 +605,14 @@ function renderLuck(L, md) {
     <details class="trades-detail"><summary>See every trade</summary>
       <div class="data-scroll"><table class="data">
         <thead><tr><th>Ticker</th><th>Bought</th><th class="num">Days</th><th class="num">You</th><th class="num">Industry</th><th class="num">Difference</th></tr></thead>
-        <tbody>${L.trades.map((t) => `<tr>
+        <tbody>${L.trades.slice(0, 500).map((t) => `<tr>
           <td><strong>${esc(t.ticker)}</strong> <span class="why">${esc(SHORT[t.industry])}</span></td>
           <td>${esc(t.buyDate)}</td><td class="num">${t.days.toLocaleString()}</td>
           <td class="num ${tone(t.logReturn)}">${pctLog(t.logReturn)}</td>
           <td class="num">${pctLog(t.bench)}</td>
           <td class="num ${tone(t.excess)}">${pctLog(t.excess)}</td></tr>`).join("")}</tbody>
       </table></div>
-      <p class="why">Your figures are price changes; industry figures include dividends.</p>
+      <p class="why">${L.trades.length > 500 ? `Showing the first 500 of ${L.trades.length.toLocaleString()} trades. ` : ""}Your figures are price changes; industry figures include dividends.</p>
     </details>`;
 }
 

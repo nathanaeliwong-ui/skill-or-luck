@@ -164,6 +164,7 @@ table.trades { border-collapse: collapse; width: 100%; min-width: 920px; }
 .trades td:nth-child(4) input, .trades td:nth-child(5) input, .trades td:nth-child(7) input, .trades td:nth-child(8) input { width: 92px; }
 .trades tr.closed td:nth-child(8) input { opacity: .35; }
 .trades select.auto { color: var(--muted); }
+.trades tr.more-rows td { padding: 14px 10px; color: var(--muted); font-size: .9rem; }
 
 .job { margin: 32px 0 0; max-width: 520px; }
 .job label { display: block; font-weight: 600; margin-bottom: 8px; letter-spacing: -.015em; }
@@ -299,11 +300,21 @@ details summary { cursor: pointer; color: var(--accent); font-weight: 500; paddi
 .foot { margin-top: 40px; padding-top: 22px; padding-bottom: 56px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .8rem; line-height: 1.5; }
 .foot p { margin: 0 0 8px; }
 
+
+/* Keep text inside its box: grid and flex children may shrink, long words and numbers wrap. */
+.stats > *, .two-col > *, .price-options > *, .price-list > *, .run-bar > *, .toolbar > *, .cta-row > * { min-width: 0; }
+.stat, .stat .k, .stat .s, .card-body, .verdict, .notice, .price-list li, .price-option, .legend, .meter-labels span, .bar-row .name, .chart-title, .method-body, .foot { overflow-wrap: anywhere; }
+.bar-row { min-width: 0; }
+.bar-row .val { white-space: nowrap; }
+.histo, .chart-box { max-width: 100%; }
+
 @media (max-width: 600px) {
   body { font-size: 16px; }
   .nav-note { display: none; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .stat { padding: 16px; }
+  .stat .v { font-size: clamp(1.15rem, 5.5vw, 1.5rem); }
+  .meter-labels { font-size: .64rem; }
   .verdict .explain { font-size: 1rem; }
   .tabs { top: 56px; }
   .step { border-radius: 20px; }
