@@ -149,7 +149,7 @@ h3 { font: 600 1.05rem/1.3 var(--sans); letter-spacing: -.015em; margin: 0 0 6px
 
 /* Trades table ------------------------------------------------------------ */
 .table-scroll { position: relative; overflow-x: auto; border-radius: var(--r-md); background: var(--paper); margin-top: 18px; }
-table.trades { border-collapse: collapse; width: 100%; min-width: 920px; }
+table.trades { border-collapse: collapse; width: 100%; min-width: 1010px; }
 .trades th { font: 600 .72rem/1.2 var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
   text-align: left; padding: 14px 8px 10px; white-space: nowrap; }
 .trades td { padding: 3px 4px; border-top: 1px solid var(--rule); }
@@ -159,7 +159,7 @@ table.trades { border-collapse: collapse; width: 100%; min-width: 920px; }
 .trades input:hover, .trades select:hover { background: var(--fill); }
 .trades input:focus, .trades select:focus { border-color: var(--focus); background: var(--card); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 25%, transparent); }
 .trades input.ticker { font-weight: 600; text-transform: uppercase; width: 88px; letter-spacing: .01em; }
-.trades select { max-width: 190px; }
+.trades select { width: 260px; max-width: none; }
 .trades input[type="date"] { min-width: 132px; }
 .trades td:nth-child(4) input, .trades td:nth-child(5) input, .trades td:nth-child(7) input, .trades td:nth-child(8) input { width: 92px; }
 .trades tr.closed td:nth-child(8) input { opacity: .35; }
@@ -243,8 +243,8 @@ table.trades { border-collapse: collapse; width: 100%; min-width: 920px; }
 .card.is-off { display: none; }
 
 /* Result tabs: a segmented control under the verdict */
-.tabs { position: sticky; top: 60px; z-index: 5; display: flex; gap: 4px; padding: 4px; justify-self: center; width: fit-content; max-width: 100%;
-  overflow-x: auto; scrollbar-width: none; border-radius: 999px; background: var(--paper-2); }
+.tabs { position: sticky; top: 60px; z-index: 5; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; padding: 4px;
+  justify-self: center; width: fit-content; max-width: 100%; border-radius: 22px; background: var(--paper-2); }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs button { flex: none; border: 0; cursor: pointer; font: 500 .9rem/1 var(--sans); letter-spacing: -.01em; color: var(--muted);
   background: transparent; border-radius: 999px; padding: 10px 16px; transition: background .2s, color .2s; }
@@ -312,6 +312,7 @@ details summary { cursor: pointer; color: var(--accent); font-weight: 500; paddi
   body { font-size: 16px; }
   .nav-note { display: none; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .stats > .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .stat { padding: 16px; }
   .stat .v { font-size: clamp(1.15rem, 5.5vw, 1.5rem); }
   .meter-labels { font-size: .64rem; }

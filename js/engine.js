@@ -234,21 +234,21 @@ export function xirr(flows) {
 // ---------------------------------------------------------------------------
 
 /** Kenneth French's 12-industry classification, plus a whole-market proxy and "no proxy". */
-export const INDUSTRIES = {
-  BusEq: "Tech: computers, software, chips",
-  Money: "Finance: banks, insurance, payments",
+export const INDUSTRIES = {   // kept short so each name fits its dropdown
+  BusEq: "Tech, software & chips",
+  Money: "Banks, insurance & payments",
   Hlth: "Healthcare & pharma",
-  Shops: "Retail, wholesale & restaurants",
-  NoDur: "Consumer staples: food, drinks, apparel",
-  Durbl: "Cars & household durables",
+  Shops: "Retail & restaurants",
+  NoDur: "Food, drinks & apparel",
+  Durbl: "Cars & home goods",
   Manuf: "Manufacturing & aerospace",
   Enrgy: "Oil, gas & coal",
   Chems: "Chemicals",
   Telcm: "Telecom & cable",
   Utils: "Utilities",
-  Other: "Other: transport, media, travel, mining",
-  MKT: "Whole stock market (index funds)",
-  NONE: "No proxy: bonds, gold, crypto, cash",
+  Other: "Transport, media & mining",
+  MKT: "Whole market (index funds)",
+  NONE: "No proxy (bonds, gold, cash)",
 };
 
 export const JOB_INDUSTRIES = {
@@ -256,15 +256,15 @@ export const JOB_INDUSTRIES = {
   Money: "Banking, insurance or finance",
   Hlth: "Healthcare or pharma",
   Shops: "Retail, wholesale or restaurants",
-  NoDur: "Food, drinks, apparel or consumer goods",
+  NoDur: "Food, drinks or apparel",
   Durbl: "Car or appliance industry",
-  Manuf: "Manufacturing, aerospace or defense",
+  Manuf: "Manufacturing or defense",
   Enrgy: "Oil, gas or coal",
   Chems: "Chemicals",
   Telcm: "Telecom or cable",
   Utils: "Utilities",
-  Other: "Construction, transport, hospitality, media or mining",
-  NONE: "Government, education, nonprofit or other",
+  Other: "Transport, media or mining",
+  NONE: "Government, education or other",
 };
 
 const TICKER_GROUPS = {
