@@ -206,10 +206,25 @@ table.trades { border-collapse: collapse; width: 100%; min-width: 920px; }
 .verdict .explain { font-size: 1.1rem; line-height: 1.45; color: var(--muted); margin: 0 auto; max-width: 56ch; text-wrap: pretty; }
 
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+/* Five-level skill scale under the verdict headline */
+.meter { max-width: 560px; margin: 4px auto 22px; }
+.meter-track { position: relative; display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; height: 10px; }
+.meter-track .seg { border-radius: 999px; opacity: .35; }
+.meter-track .seg.on { opacity: 1; }
+.seg-trailing { background: var(--luck); }
+.seg-unlucky { background: color-mix(in srgb, var(--luck) 55%, var(--paper-2)); }
+.seg-unclear { background: var(--gold); }
+.seg-leaning { background: color-mix(in srgb, var(--skill) 60%, var(--paper-2)); }
+.seg-likely { background: var(--skill); }
+.meter-dot { position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+  background: var(--card); border: 3px solid var(--tone, var(--ink)); box-shadow: 0 1px 4px rgba(0, 0, 0, .2); }
+.meter-labels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-top: 10px; font-size: .72rem; line-height: 1.25; color: var(--muted); }
+.meter-labels span { text-align: center; }
+.meter-labels span.on { color: var(--ink); font-weight: 600; }
 .verdict .fine { font-size: .85rem; line-height: 1.45; color: var(--muted); opacity: .85; margin: 14px auto 0; max-width: 60ch; }
 .stat { border-radius: var(--r-md); background: var(--card); padding: 22px 22px 20px; box-shadow: var(--shadow); }
 .stat .k { font-size: .85rem; font-weight: 500; color: var(--muted); margin: 0 0 10px; }
-.stat .v { font: 600 clamp(1.7rem, 3vw, 2.1rem)/1.05 var(--sans); letter-spacing: -.03em; margin: 0; font-variant-numeric: tabular-nums; }
+.stat .v { font: 600 clamp(1.35rem, 2.2vw, 2rem)/1.08 var(--sans); letter-spacing: -.03em; margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .stat .s { font-size: .85rem; color: var(--muted); margin: 10px 0 0; line-height: 1.35; }
 .pos { color: var(--skill); }
 .neg { color: var(--luck); }

@@ -122,7 +122,7 @@
       <div id="problems" class="notice warn" hidden></div>
 
       <div class="tabs" id="result-tabs" role="tablist" aria-label="Result sections">
-        <button type="button" role="tab" data-tab="card-luck" aria-selected="true">Luck test</button>
+        <button type="button" role="tab" data-tab="card-luck" aria-selected="true">Stock picking</button>
         <button type="button" role="tab" data-tab="card-holding" aria-selected="false">Selling habits</button>
         <button type="button" role="tab" data-tab="card-mix" aria-selected="false">Portfolio</button>
         <button type="button" role="tab" data-tab="card-job" aria-selected="false">Job risk</button>
@@ -132,7 +132,7 @@
       </div>
 
       <article class="card" id="card-luck">
-        <h2>The luck test</h2>
+        <h2>Stock picking within industries</h2>
         <div class="card-body" id="luck-body"></div>
       </article>
 
@@ -169,8 +169,9 @@
       <details class="method">
         <summary>How the numbers are calculated</summary>
         <div class="method-body">
+          <p><strong>The verdict.</strong> Every trade with a known end price is compared with the whole US market over the same dates, without dividends on either side. Each trade is weighted by its share of your portfolio when you placed it and by how long you held it, so growing your account over the years doesn't let the latest years drown out the rest (the time-weighted approach used to judge fund managers). That gives your edge per year. To see whether luck could explain it, the page simulates 10,000 investors with no skill who make bets of the same size and timing but win or lose at random, and counts how many you finished ahead of. Overlapping trades in one industry are treated as one bet. The labels: Likely skilled (ahead of 95% or more), Leaning skilled (80–95%), Can't tell yet, Leaning unlucky, and Likely trailing the market. About 5 in 100 traders with no skill still reach Likely skilled by luck, and about 15 in 100 more reach Leaning skilled. The risk-adjusted figure compares each trade with the market scaled by its industry's sensitivity to the market (beta), so a portfolio of high-risk stocks gets less credit for a rising market.</p>
           <p><strong>Industry proxies.</strong> Each stock is matched to one of Kenneth French's 12 industry portfolios, which have free monthly returns (including dividends) back to 1926. Index funds use the whole US market. Bonds, gold, crypto and cash have no proxy and are left out of the exposure tests.</p>
-          <p><strong>The luck test.</strong> For every trade with a known end price, your return is compared with its industry's return over the exact same dates. If you had no stock-picking skill, beating or trailing the industry by a given amount would be equally likely. The test flips each trade's result to a win or a loss at random 10,000 times and counts how often a no-skill investor would match your average. Each trade counts equally, whatever its size. Trades in the same industry with mostly overlapping holding periods, and repeat purchases of one stock, are grouped into one bet and flipped together, because they share the same luck; with fewer than 5 separate bets the test declines to give a verdict.</p>
+          <p><strong>Stock picking.</strong> For every trade with a known end price, your return is compared with its industry's return over the exact same dates. If you had no stock-picking skill, beating or trailing the industry by a given amount would be equally likely. The test flips each trade's result to a win or a loss at random 10,000 times and counts how often a no-skill investor would match your average. Each trade counts equally, whatever its size. Trades in the same industry with mostly overlapping holding periods, and repeat purchases of one stock, are grouped into one bet and flipped together, because they share the same luck; with fewer than 5 separate bets the test declines to give a verdict.</p>
           <p><strong>Trades needed.</strong> The number of trades, at your current average edge and spread, that a one-sided test at the 5% level would need before ruling out luck.</p>
           <p><strong>Your return.</strong> A money-weighted annual return (XIRR) from your actual purchase and sale dates, compared with putting exactly the same money into the whole market on the same dates. Your figures use the price change only, so dividends you received are not counted; the industry and market figures include dividends, which slightly favours them.</p>
           <p><strong>Selling habits.</strong> Compares how long you held sold winners with sold losers, using a permutation test. Holding losers much longer is the disposition effect, one of the best-documented costly habits of individual investors.</p>

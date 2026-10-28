@@ -31,6 +31,7 @@ FILES = {
     "industries": "12_Industry_Portfolios_CSV.zip",
     "factors": "F-F_Research_Data_Factors_CSV.zip",
     "momentum": "F-F_Momentum_Factor_CSV.zip",
+    "industries_exdiv": "12_Industry_Portfolios_Wout_Div_CSV.zip",
     "industries_daily": "12_Industry_Portfolios_daily_CSV.zip",
     "factors_daily": "F-F_Research_Data_Factors_daily_CSV.zip",
 }
@@ -56,7 +57,7 @@ def download(name: str) -> str:
     raise RuntimeError(f"Could not download {url}: {last_error}")
 
 
-def first_monthly_table(text: str, required_cols: list[str], key_len: int = 6) -> dict[str, dict[str, float]]:
+def first_monthly_table(text: str, required_cols: list[str], key_len: int = 6, returns: bool = True) -> dict[str, dict[str, float]]:
     """Parse the first table whose header has the required columns.
 
     The French CSVs stack several tables (monthly, annual, equal-weighted...)
@@ -86,7 +87,7 @@ def first_monthly_table(text: str, required_cols: list[str], key_len: int = 6) -
                         val = float(raw)
                     except ValueError:
                         continue
-                    if val <= -99.99 or val >= 999:  # French's missing-value markers
+                    if val <= -99.99 or (returns and val >= 999):  # French's missing-value markers
                         continue
                     out[col][month] = val
                 j += 1
@@ -94,6 +95,44 @@ def first_monthly_table(text: str, required_cols: list[str], key_len: int = 6) -
                 return out
         i += 1
     raise ValueError(f"No monthly table with columns {required_cols} found")
+
+
+def titled_monthly_table(text: str, title: str, required_cols: list[str]) -> dict[str, dict[str, float]]:
+    """Parse the monthly table that follows a title line, e.g. 'Average Firm Size'."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().startswith(title):
+            # Firm counts and sizes are levels, not returns, so large values are real.
+            return first_monthly_table("\n".join(lines[i + 1:]), required_cols, returns=False)
+    raise ValueError(f"No table titled {title!r} found")
+
+
+def market_dividend_yield(ind_text: str, exdiv_text: str) -> dict[str, float]:
+    """Monthly dividend part of the whole market's return, in percent.
+
+    Each industry's dividend part is its return with dividends minus its return without.
+    Industries are weighted by market value (number of firms x average firm size), which
+    is how French builds the value-weighted portfolios. Subtracting this from the market's
+    total return gives a price-only market to compare with price-only trade returns.
+    """
+    with_div = first_monthly_table(ind_text, INDUSTRY_CODES)
+    ex_div = first_monthly_table(exdiv_text, INDUSTRY_CODES)
+    firms = titled_monthly_table(ind_text, "Number of Firms in Portfolios", INDUSTRY_CODES)
+    size = titled_monthly_table(ind_text, "Average Firm Size", INDUSTRY_CODES)
+    out = {}
+    for month in with_div[INDUSTRY_CODES[0]]:
+        total_w = part = 0.0
+        for code in INDUSTRY_CODES:
+            w_n, w_s = firms[code].get(month), size[code].get(month)
+            r, rx = with_div[code].get(month), ex_div[code].get(month)
+            if None in (w_n, w_s, r, rx):
+                continue
+            w = w_n * w_s
+            total_w += w
+            part += w * (r - rx)
+        if total_w > 0:
+            out[month] = round(part / total_w, 4)
+    return out
 
 
 def month_range(first: str, last: str) -> list[str]:
@@ -138,7 +177,9 @@ def build_daily() -> dict:
 def main() -> None:
     out_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent / "data" / "french.json"
 
-    ind = first_monthly_table(download(FILES["industries"]), INDUSTRY_CODES)
+    ind_text = download(FILES["industries"])
+    ind = first_monthly_table(ind_text, INDUSTRY_CODES)
+    div_yield = market_dividend_yield(ind_text, download(FILES["industries_exdiv"]))
     fac = first_monthly_table(download(FILES["factors"]), ["Mkt-RF", "SMB", "HML", "RF"])
     mom_text = download(FILES["momentum"])
     mom = first_monthly_table(mom_text, ["Mom"])
@@ -167,6 +208,8 @@ def main() -> None:
             "RF": series(fac["RF"]),
             "Mom": series(mom["Mom"]),
         },
+        # Dividend part of the market's monthly return (percent); market minus this is price-only.
+        "marketDividend": series(div_yield),
     }
 
     # Sanity checks so a format change on the source site fails loudly.
@@ -175,6 +218,10 @@ def main() -> None:
     for code in INDUSTRY_CODES:
         if sum(v is not None for v in payload["industries"][code][-24:]) < 20:
             raise ValueError(f"Industry {code} is missing recent data")
+    recent = [v for v in payload["marketDividend"][-120:] if v is not None]
+    yearly = sum(recent) / len(recent) * 12 if recent else 0
+    if not 0.5 < yearly < 5:
+        raise ValueError(f"Market dividend yield looks wrong ({yearly:.2f}% a year)")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, separators=(",", ":")))

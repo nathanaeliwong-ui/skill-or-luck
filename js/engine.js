@@ -87,9 +87,17 @@ export function parseNumber(raw) {
   let neg = false;
   if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
   s = s.replace(/[$€£¥\s]/g, "");
-  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, "").replace(",", "."); // 1.234,5
-  else if (/^-?\d+,\d+$/.test(s)) s = s.replace(",", ".");                                // 12,5
-  else s = s.replace(/,/g, "");                                                          // 1,234.5
+  // Prices often have three decimals (12.345), so a lone dot is always a decimal point.
+  // With both separators, the last one is the decimal point. A comma alone is a thousands
+  // separator only in the 1,234 / 12,345,678 pattern; otherwise it is a decimal comma (12,5).
+  const dot = s.lastIndexOf("."), comma = s.lastIndexOf(",");
+  if (dot >= 0 && comma >= 0) {
+    s = comma > dot ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");   // 1.234,5 | 1,234.5
+  } else if (comma >= 0) {
+    s = /^-?\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, "") : s.replace(",", ".");      // 1,234 | 12,5
+  } else if (/^-?\d{1,3}(\.\d{3}){2,}$/.test(s)) {
+    s = s.replace(/\./g, "");                                                         // 1.234.567
+  }
   const n = Number(s);
   return neg ? -n : n;
 }
@@ -374,6 +382,48 @@ export class MarketData {
       coveredMs += overlap;
     }
     return { growth, covered: coveredMs / (e - s) };
+  }
+
+  /**
+   * Growth of $1 in the whole market without dividends. Trade returns here are price
+   * changes only, so this is the like-for-like benchmark. Falls back to the total return
+   * when the data file has no dividend series.
+   */
+  marketPriceGrowth(startStr, endStr) {
+    const total = this.windowGrowth("MKT", startStr, endStr);
+    const div = this.raw.marketDividend;
+    if (!div) return total;
+    const s = toTime(startStr), e = toTime(endStr);
+    let drag = 0;
+    for (let m = monthIndex(startStr); m <= monthIndex(endStr); m++) {
+      const ms = monthStartTime(m), me = monthStartTime(m + 1);
+      const overlap = Math.max(0, Math.min(e, me) - Math.max(s, ms));
+      const d = div[m - this.first];
+      if (!overlap || d === null || d === undefined) continue;
+      drag += Math.log(1 - d / 100) * (overlap / (me - ms));
+    }
+    return { growth: total.growth * Math.exp(drag), covered: total.covered };
+  }
+
+  /** How much an industry moves with the market (beta), from the last 10 years of months. */
+  beta(code) {
+    this._betas ||= {};
+    if (code in this._betas) return this._betas[code];
+    const xs = [], ys = [];
+    for (let m = this.last - 119; m <= this.last; m++) {
+      const r = this.value(code, m), mk = this.value("MktRF", m), rf = this.value("RF", m);
+      if (r === null || mk === null || rf === null) continue;
+      xs.push(mk);
+      ys.push(r - rf);
+    }
+    let b = 1;
+    if (xs.length >= 36) {
+      const mx = mean(xs), my = mean(ys);
+      let cov = 0, v = 0;
+      for (let i = 0; i < xs.length; i++) { cov += (xs[i] - mx) * (ys[i] - my); v += (xs[i] - mx) ** 2; }
+      if (v > 0) b = cov / v;
+    }
+    return (this._betas[code] = b);
   }
 }
 
@@ -870,6 +920,114 @@ export function luckTest(trades, md, { sims = 10000, seed = 42 } = {}) {
     winPValue: binomialUpperTail(groupWins, clusters),
     tradesNeeded,
     histogram: { lo, width, counts, observed: obs },
+  };
+}
+
+/**
+ * Skill level, from 5 labels. `confidence` is the share of no-skill investors (same bets,
+ * random signs) who ended up below you. The top label needs 95%, so about 5 in 100 traders
+ * with no skill still reach it by luck, and about 15 in 100 more reach "leaning".
+ */
+export function skillLabel(edge, confidence) {
+  if (edge > 0 && confidence >= 0.95) return "likely";
+  if (edge > 0 && confidence >= 0.8) return "leaning";
+  if (edge <= 0 && confidence <= 0.05) return "trailing";
+  if (edge <= 0 && confidence <= 0.2) return "unlucky";
+  return "unclear";
+}
+
+/**
+ * The headline test: did your money beat the market? Every trade's ending value is compared with
+ * the same money in the whole market (without dividends, like your price-only returns) over its
+ * own dates. Edge per year = the extra return per year held, with each trade weighted by its share
+ * of the portfolio when it was placed, so a big long bet counts for more than a small quick one. As in the luck test, overlapping trades in one industry are
+ * flipped together when simulating no-skill investors.
+ * A second figure adjusts for risk: each trade is compared with the market scaled by its
+ * industry's beta, so a portfolio of high-risk stocks gets less credit for a rising market.
+ */
+export function marketTest(trades, md, { sims = 10000, seed = 13 } = {}) {
+  const usable = [];
+  let tooRecent = 0;
+  for (const t of trades) {
+    if (!t.exitPrice) continue;
+    const m = md.marketPriceGrowth(t.buyDate, t.exitDate);
+    if (m.covered < 0.75) { tooRecent++; continue; }
+    const rf = md.windowGrowth("RF", t.buyDate, t.exitDate).growth;
+    const beta = t.industry === "NONE" || t.industry === "MKT" ? 1 : md.beta(t.industry);
+    const lm = Math.log(m.growth), lf = Math.log(rf);
+    // Simple (dollar) returns, not log returns: a +400% winner must outweigh a -70% loser
+    // the way it does in your account.
+    const grew = 1 + t.simpleReturn;
+    usable.push({ ...t, years: t.days / 365.25, excess: grew - m.growth, excessRisk: grew - Math.exp(lf + beta * (lm - lf)), beta });
+  }
+  const n = usable.length;
+  const group = clusterTrades(usable);
+  const clusters = new Set(group).size;
+  const base = { n, clusters, tooRecent };
+  if (n < 5 || clusters < 5) return { ...base, enough: false };
+
+  // Weight each trade by its share of the portfolio when it was placed, not by its dollar size.
+  // Portfolios grow with savings (and funds with client money), so dollar weights would let the
+  // latest, biggest years drown out the rest. This is the time-weighted idea fund managers are
+  // judged by: a 10% position counts the same in year one as in year ten.
+  const events = [];
+  usable.forEach((t, i) => {
+    events.push([toTime(t.buyDate), 1, i], [toTime(t.exitDate), 0, i]);   // exits sort before buys on a day
+  });
+  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const share = new Float64Array(n);
+  let open = 0;
+  for (let k = 0; k < events.length;) {
+    const day = events[k][0];
+    let j = k;
+    for (; j < events.length && events[j][0] === day && events[j][1] === 0; j++) open -= usable[events[j][2]].cost;
+    const buys = [];
+    for (; j < events.length && events[j][0] === day; j++) { open += usable[events[j][2]].cost; buys.push(events[j][2]); }
+    for (const i of buys) share[i] = usable[i].cost / Math.max(open, usable[i].cost);
+    k = j;
+  }
+
+  const rand = rng(seed);
+  const measure = (key) => {
+    const g = new Float64Array(clusters), d = new Float64Array(clusters);
+    usable.forEach((t, i) => { g[group[i]] += share[i] * t[key]; d[group[i]] += share[i] * t.years; });
+    const D = d.reduce((a, b) => a + b, 0);
+    const edge = g.reduce((a, b) => a + b, 0) / D;          // extra return per year, portfolio-weighted
+    const nulls = new Float64Array(sims);
+    let below = 0;
+    for (let s = 0; s < sims; s++) {
+      let sum = 0;
+      for (let k = 0; k < clusters; k++) sum += rand() < 0.5 ? g[k] : -g[k];
+      nulls[s] = sum / D;
+      if (nulls[s] < edge - 1e-12) below++;
+    }
+    const boots = new Float64Array(4000);
+    for (let b = 0; b < boots.length; b++) {
+      let gs = 0, ds = 0;
+      for (let k = 0; k < clusters; k++) { const j = Math.floor(rand() * clusters); gs += g[j]; ds += d[j]; }
+      boots[b] = gs / ds;
+    }
+    return { edge, confidence: below / sims, se: stdev(Array.from(nulls)), ci: bootstrapInterval(edge, boots, clusters) };
+  };
+  const main = measure("excess");
+  const risk = measure("excessRisk");
+
+  const first = Math.min(...usable.map((t) => toTime(t.buyDate)));
+  const last = Math.max(...usable.map((t) => toTime(t.exitDate)));
+  const span = Math.max(1 / 12, (last - first) / (365.25 * DAY_MS));
+  // At today's edge and spread, how much longer a record like this one would need to be
+  // for the top label (one-sided 95%). Null when there's no positive edge to confirm.
+  const k = main.edge > 0 ? (1.645 * main.se / main.edge) ** 2 : null;
+  const moreYears = k === null ? null : Math.max(0, span * (k - 1));
+
+  return {
+    ...base,
+    enough: true,
+    edge: main.edge, confidence: main.confidence, ci: main.ci,
+    risk: { edge: risk.edge, confidence: risk.confidence, label: skillLabel(risk.edge, risk.confidence) },
+    label: skillLabel(main.edge, main.confidence),
+    span, moreYears,
+    avgBeta: usable.reduce((a, t, i) => a + share[i] * t.beta, 0) / share.reduce((a, b) => a + b, 0),
   };
 }
 

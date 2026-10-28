@@ -34,8 +34,10 @@ assert(Math.abs(E.binomialUpperTail(8, 10) - 56/1024) < 1e-12, "binomial tail");
 const idx = E.monthIndex("2020-03");
 const g = md.windowGrowth("BusEq", "2020-03-01", "2020-04-01");
 assert(Math.abs(g.growth - (1 + md.value("BusEq", idx))) < 1e-12 && g.covered === 1, "window growth 1 month");
-const g2 = md.windowGrowth("BusEq", "2026-07-01", "2026-10-10");
-assert(g2.covered < 0.65 && g2.covered > 0.55, "coverage beyond data end " + g2.covered.toFixed(2));
+// a window that runs as far past the end of the data as it starts before it is about half covered
+const endM = E.toTime(md.raw.lastMonth + "-01") + 31 * 86400000;     // first days of the month after the data
+const g2 = md.windowGrowth("BusEq", E.fromTime(endM - 120 * 86400000), E.fromTime(endM + 120 * 86400000));
+assert(g2.covered < 0.6 && g2.covered > 0.4, "coverage beyond data end " + g2.covered.toFixed(2));
 
 // daily windows: whole calendar months compound to French's monthly return (to within rounding)
 for (const [code, a, b, ma, mb] of [
@@ -54,8 +56,9 @@ assert(Math.abs(one.growth - (1 + day("BusEq", i0))) < 1e-12, "one trading day w
 const wknd = mdd.windowGrowth("BusEq", "2020-03-06", "2020-03-09"); // Fri -> Mon
 assert(Math.abs(wknd.growth - (1 + day("BusEq", dailyJson.dates.indexOf(20200309)))) < 1e-12, "Friday to Monday = Monday's return");
 assert(mdd.windowGrowth("BusEq", "2020-03-03", "2020-03-03").growth === 1, "same-day window is flat");
-const past = mdd.windowGrowth("MKT", "2026-06-01", "2026-12-31");
-assert(past.covered > 0.4 && past.covered < 0.5, "daily coverage beyond data end " + past.covered.toFixed(2));
+const endD = E.toTime(dailyJson.lastDate);
+const past = mdd.windowGrowth("MKT", E.fromTime(endD - 100 * 86400000), E.fromTime(endD + 100 * 86400000));
+assert(past.covered > 0.45 && past.covered < 0.55, "daily coverage beyond data end " + past.covered.toFixed(2));
 
 
 // --- stress-test regressions ---
@@ -95,6 +98,30 @@ const cp = E.parsePriceCsv("Date,Close\n25/05/2024,11\n03/05/2024,10");
 assert(cp[0].d === "2024-05-03" && cp[1].d === "2024-05-25", "day-first price file");
 const lk = E.luckTest(mk6(), mdd, { sims: 200 });
 assert(lk.ci === undefined, "no interval when there are too few bets");
+
+// --- portfolio-level market test ---
+for (const [txt, want] of [["12.345", 12.345], ["5.000", 5], ["0.001", 0.001], ["1,234", 1234], ["1.234,5", 1234.5], ["12,5", 12.5], ["1,234.5", 1234.5], ["1.234.567", 1234567]]) {
+  assert(Math.abs(E.parseNumber(txt) - want) < 1e-9, `number ${txt} -> ${want}`);
+}
+const po = mdd.marketPriceGrowth("2015-01-02", "2025-01-02").growth, tot = mdd.windowGrowth("MKT", "2015-01-02", "2025-01-02").growth;
+const divYr = Math.log(tot / po) / 10;
+assert(divYr > 0.01 && divYr < 0.025, "price-only market trails total return by the dividend yield " + (divYr * 100).toFixed(2) + "%");
+assert(E.skillLabel(0.05, 0.97) === "likely" && E.skillLabel(0.05, 0.85) === "leaning" && E.skillLabel(0.01, 0.6) === "unclear"
+  && E.skillLabel(-0.02, 0.15) === "unlucky" && E.skillLabel(-0.05, 0.02) === "trailing", "skill labels");
+function mkMarket(edge, n, seed) {   // trades that beat the price-only market by `edge` a year, with noise
+  const rr = E.rng(seed), rows = [], inds = ["BusEq", "Hlth", "Money", "Shops", "Enrgy", "NoDur"];
+  for (let i = 0; i < n; i++) {
+    const y = 2004 + Math.floor(rr() * 18), mo = 1 + Math.floor(rr() * 12);
+    const buy = `${y}-${String(mo).padStart(2, "0")}-05`, sell = `${y + 1}-${String(mo).padStart(2, "0")}-05`;
+    const g = mdd.marketPriceGrowth(buy, sell).growth;
+    rows.push({ ticker: "S" + i, industry: inds[i % inds.length], buyDate: buy, buyPrice: 100, qty: 1 + (i % 3), sellDate: sell, sellPrice: 100 * g * (1 + edge) * Math.exp((rr() - 0.5) * 0.3) });
+  }
+  return E.prepareTrades(rows, "2026-10-29").trades;
+}
+const Mnone = E.marketTest(mkMarket(0, 40, 21), mdd, { sims: 2000 }), Mskill = E.marketTest(mkMarket(0.15, 40, 22), mdd, { sims: 2000 });
+assert(Mnone.enough && Mnone.label !== "likely", "no-edge trader is not called likely skilled: " + Mnone.label);
+assert(Mskill.label === "likely" && Mskill.edge > 0.08, "a +15% a year trader is likely skilled: " + Mskill.label + " " + Mskill.edge.toFixed(3));
+assert(Mskill.ci[0] < Mskill.edge && Mskill.edge < Mskill.ci[1], "edge sits inside its interval");
 
 // FIFO
 const fifo = E.fifoMatch([

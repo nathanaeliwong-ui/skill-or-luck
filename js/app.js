@@ -398,8 +398,9 @@ async function run() {
 
     $("#results").hidden = false;
     clearCharts();
-    renderVerdict(luck, perf);
-    renderStats(perf, luck);
+    const market = E.marketTest(trades, md);
+    renderVerdict(market, luck, perf);
+    renderStats(perf, market);
     showProblem(notes.length ? `<strong>Check these:</strong><ul>${notes.map((n) => `<li>${n}</li>`).join("")}</ul>` : "");
     renderLuck(luck, md);
     renderHolding(hold);
@@ -486,48 +487,59 @@ function showProblem(html) {
 // Rendering results
 // ---------------------------------------------------------------------------
 
-function renderVerdict(L, P) {
-  const box = $("#verdict");
-  let head, explain, color;
-  if (!L.enough) {
-    head = "Not enough trades to tell yet";
-    color = cssVar("--gold");
-    explain = L.n >= 5
-      ? `Your ${L.n} trades are really only ${L.clusters} separate bet${L.clusters === 1 ? "" : "s"}. Trades in the same industry held over the same dates, or repeat buys of one stock, share the same luck, so they count once. The luck test needs at least 5 separate bets.`
-      : `The luck test needs at least 5 trades with a known end price in stocks it can compare with an industry. It found ${L.n}.`;
-    explain += L.tooRecent ? ` ${L.tooRecent} more ${L.tooRecent === 1 ? "is" : "are"} too recent for the industry data.` : "";
-  } else {
-    const med = pctLog(L.medianExcess);
-    if (L.meanExcess <= 0) {
-      head = "No sign of skill";
-      color = cssVar("--luck");
-      explain = `On average your picks trailed their own industry by ${pctLog(L.meanExcess).replace("−", "")} per trade${L.medianExcess > 0 ? `. Your typical trade did beat it (median ${med}), but the losers cost more than the winners made` : ""}. Holding the industry instead would have done better.`;
-    } else if (L.pValue < 0.05) {
-      head = "Evidence of skill";
-      color = cssVar("--skill");
-      explain = `Your picks beat their own industry by a median ${med} per trade. An investor with no skill would match that only ${chance(L.pValue)} of the time.`;
-    } else if (L.pValue < 0.2) {
-      head = "Promising, but could still be luck";
-      color = cssVar("--gold");
-      explain = `Your picks beat their own industry by a median ${med} per trade, but a no-skill investor would do this well ${chance(L.pValue)} of the time. More trades will tell.`;
-    } else {
-      head = "Indistinguishable from luck";
-      color = cssVar("--gold");
-      explain = `Your picks beat their own industry by a median ${med} per trade, but ${chance(L.pValue)} of no-skill investors would do at least as well. That's what luck looks like.`;
-    }
+const LEVELS = [
+  { key: "trailing", name: "Likely trailing the market", tone: "--luck" },
+  { key: "unlucky", name: "Leaning unlucky", tone: "--luck" },
+  { key: "unclear", name: "Can't tell yet", tone: "--gold" },
+  { key: "leaning", name: "Leaning skilled", tone: "--skill" },
+  { key: "likely", name: "Likely skilled", tone: "--skill" },
+];
+const LEVEL = Object.fromEntries(LEVELS.map((l) => [l.key, l]));
+
+// Where a confidence figure sits on the five-level scale (each level gets equal width).
+function meterPosition(c) {
+  const cuts = [0, 0.05, 0.2, 0.8, 0.95, 1];
+  for (let i = 0; i < 5; i++) {
+    if (c <= cuts[i + 1] || i === 4) return (i + Math.min(1, Math.max(0, (c - cuts[i]) / (cuts[i + 1] - cuts[i])))) / 5;
   }
-  const notes = [];
-  if (L.enough) {
-    if (P && P.youIrr > P.mktIrr && head !== "Evidence of skill") {
-      notes.push("Your overall return did beat the whole market, but that can come from owning industries that did well, which this test doesn't count as stock-picking skill.");
-    }
-    notes.push("Industry returns include dividends and your trade returns don't, so this comparison leans slightly against you.");
-  }
-  box.style.setProperty("--tone", color);
-  box.innerHTML = `<p class="label">Verdict on ${L.n} trade${L.n === 1 ? "" : "s"}</p><p class="headline">${esc(head)}</p><p class="explain">${explain}</p>${notes.map((n) => `<p class="fine">${n}</p>`).join("")}`;
+  return 1;
 }
 
-function renderStats(P, L) {
+function renderVerdict(M, L, P) {
+  const box = $("#verdict");
+  if (!M.enough) {
+    box.style.setProperty("--tone", cssVar("--gold"));
+    const explain = M.n >= 5
+      ? `Your ${M.n} trades are really only ${M.clusters} separate bet${M.clusters === 1 ? "" : "s"}. Trades in the same industry held over the same dates, or repeat buys of one stock, share the same luck, so they count once. The test needs at least 5 separate bets.`
+      : `The test needs at least 5 trades with a known end price. It found ${M.n}.`;
+    box.innerHTML = `<p class="label">Verdict on ${M.n} trade${M.n === 1 ? "" : "s"}</p><p class="headline">Not enough trades to tell yet</p><p class="explain">${explain}${M.tooRecent ? ` ${M.tooRecent} more ${M.tooRecent === 1 ? "is" : "are"} too recent for the market data.` : ""}</p>`;
+    return;
+  }
+  const lvl = LEVEL[M.label];
+  const conf = Math.round(M.confidence * 100);
+  const ahead = M.edge > 0;
+  const explain = `Weighting each trade by its share of your portfolio, your trades ${ahead ? "beat" : "trailed"} the market by <strong>${pct(Math.abs(M.edge)).replace("+", "")} a year</strong>. Of 10,000 simulated investors with no skill making bets the same size, you finished ahead of ${conf}%.`;
+  const range = `Your true edge is likely between ${pct(M.ci[0])} and ${pct(M.ci[1])} a year.`;
+  let next = "";
+  if (M.label !== "likely" && M.moreYears !== null) {
+    const yrs = M.moreYears;
+    next = yrs > 40 ? "At this edge it would take decades more trading to be sure."
+      : `At this edge, about ${Math.max(1, Math.round(yrs))} more year${Math.round(yrs) > 1 ? "s" : ""} of trading like this would be enough for "Likely skilled".`;
+  }
+  const odds = { likely: "About 5 in 100 traders with no skill reach this level by luck.", leaning: "About 15 in 100 traders with no skill land here by luck, so keep building your record.", unclear: "Results like yours are common with or without skill.", unlucky: "About 15 in 100 traders with no skill land here by bad luck.", trailing: "Only about 5 in 100 traders with no skill do this badly." }[M.label];
+  const meter = `<div class="meter" role="img" aria-label="Skill scale: ${esc(lvl.name)}">
+      <div class="meter-track">${LEVELS.map((l) => `<span class="seg seg-${l.key}${l.key === M.label ? " on" : ""}"></span>`).join("")}<i class="meter-dot" style="left:${(meterPosition(M.confidence) * 100).toFixed(1)}%"></i></div>
+      <div class="meter-labels">${LEVELS.map((l) => `<span${l.key === M.label ? ' class="on"' : ""}>${esc(l.name.replace(" the market", ""))}</span>`).join("")}</div>
+    </div>`;
+  const notes = [];
+  notes.push(`Adjusted for risk (your industries move about ${M.avgBeta.toFixed(2)}× as much as the market): ${pct(M.risk.edge)} a year, ${esc(LEVEL[M.risk.label].name.toLowerCase())}.`);
+  if (L.enough) notes.push(`Stock picking within industries: your picks ${L.meanExcess > 0 ? "beat" : "trailed"} their own industry by ${pctLog(Math.abs(L.meanExcess)).replace("+", "")} per trade on average. See the Stock picking tab.`);
+  notes.push(`${odds} Both sides are price changes only; dividends aren't counted for you or the market.`);
+  box.style.setProperty("--tone", cssVar(lvl.tone));
+  box.innerHTML = `<p class="label">Verdict on ${M.n} trade${M.n === 1 ? "" : "s"}</p><p class="headline">${esc(lvl.name)}</p>${meter}<p class="explain">${explain} ${range}${next ? ` ${next}` : ""}</p>${notes.map((n) => `<p class="fine">${n}</p>`).join("")}`;
+}
+
+function renderStats(P, M) {
   const cards = [];
   if (P) {
     cards.push(stat("Your annual return", pct(P.youIrr), `money-weighted, ${P.count} trade${P.count === 1 ? "" : "s"} with a known price`, tone(P.youIrr)));
@@ -535,13 +547,9 @@ function renderStats(P, L) {
     const diff = P.value - P.mktValue;
     cards.push(stat("You vs the market, in dollars", (diff >= 0 ? "+" : "") + money(diff), `${money(P.value)} vs ${money(P.mktValue)} ending value`, tone(diff)));
   }
-  if (L.enough) {
-    cards.push(stat("Trades that beat their industry", `${L.wins} of ${L.n}`, L.clusters < L.n
-      ? `counting overlapping bets once (${L.groupWins} of ${L.clusters}), a coin-flipper does this well ${chance(L.winPValue)} of the time`
-      : `a coin-flipper does this well ${chance(L.winPValue)} of the time`));
-    cards.push(stat("Trades needed to rule out luck",
-      L.tradesNeeded ? (L.tradesNeeded <= L.clusters ? `${L.tradesNeeded} ✓` : `~${L.tradesNeeded.toLocaleString()}`) : "—",
-      L.tradesNeeded ? `separate bets at your current edge; you have ${L.clusters}` : "no edge to prove yet"));
+  if (M.enough) {
+    cards.push(stat("Your edge per year", pct(M.edge), `likely between ${pct(M.ci[0])} and ${pct(M.ci[1])}`, tone(M.edge)));
+    cards.push(stat("Ahead of no-skill investors", `${Math.round(M.confidence * 100)}%`, `of 10,000 simulated, across ${M.clusters} separate bets`));
   }
   $("#stat-cards").innerHTML = cards.join("");
 }

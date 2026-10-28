@@ -4,8 +4,8 @@ A free website that answers one question for individual investors: **did you bea
 
 Visitors enter their trades (or import a broker export) and the page runs the tests a fund analyst would:
 
-- **The luck test** compares every trade with its own industry over the exact same dates, then simulates 10,000 investors with no skill to see how often they'd match your results. Trades that share the same luck (same industry, mostly overlapping dates) count as one bet, so ten chip stocks bought together can't masquerade as ten independent wins.
-- **Trades needed** to rule out luck at your current edge.
+- **The verdict**: your trades against the whole market (price-only on both sides), each weighted by its share of your portfolio when you placed it, compared with 10,000 simulated investors with no skill. Five levels, from "Likely trailing the market" to "Likely skilled" (ahead of 95%+), with the odds of reaching each one by luck shown next to it, a risk-adjusted figure, and how many more years would settle it.
+- **Stock picking**: each trade against its own industry over the exact same dates. Trades that share the same luck (same industry, mostly overlapping dates) count as one bet.
 - **Your return vs the market**: money-weighted return (XIRR) against the same cash put into the whole market on the same dates.
 - **Selling habits**: do you sell winners quickly and sit on losers (the disposition effect)?
 - **Factor tilts**: Fama-French market, size and value factors plus momentum.
@@ -59,7 +59,7 @@ sample/trades-template.csv     import template
 - Industry data is published about a month behind, so trades in the most recent weeks can't be tested yet.
 - Bets in different industries are treated as independent, though a market-wide swing can still move them together.
 - Industry proxies stand in for individual stocks unless the visitor attaches real prices, so exposures and crash tests are estimates.
-- Trade returns are price changes only; dividends received aren't counted, while industry returns include dividends.
+- Trade returns are price changes only. The market benchmark removes dividends to match; the industry comparison in the stock-picking tab still includes them, which leans slightly against you.
 - The ticker-to-industry list covers a few hundred popular stocks and funds. Visitors can change any guess.
 - Broker import is tested against Robinhood- and Fidelity-style exports; unusual formats may need the template.
 
